@@ -254,6 +254,7 @@ public class ApplicationDbContext
         // SOFT DELETE FILTERS
         // ========================
         builder.Entity<Course>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<CourseTag>().HasQueryFilter(x => !x.Course.IsDeleted);
         builder.Entity<Chapter>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Lesson>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<UserCourse>().HasQueryFilter(x => !x.IsDeleted);
