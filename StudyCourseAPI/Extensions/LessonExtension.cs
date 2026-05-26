@@ -79,7 +79,7 @@ namespace StudyCourseAPI.Extensions
                 ThumbnailUrl = model.ThumbnailUrl?.Trim(),
                 CourseId = courseId,
                 ChapterId = model.ChapterId,
-                IsPreview = model.IsPreview,
+                IsPreview = model.IsPreview ?? false,
                 IsActive = model.IsActive,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -94,8 +94,8 @@ namespace StudyCourseAPI.Extensions
             entity.VideoId = model.VideoId!.Trim();
             entity.Duration = model.Duration;
             entity.ThumbnailUrl = model.ThumbnailUrl?.Trim();
-            entity.ChapterId = model.ChapterId;
-            entity.IsPreview = model.IsPreview;
+            if (model.ChapterId.HasValue) entity.ChapterId = model.ChapterId;
+            if (model.IsPreview.HasValue) entity.IsPreview = model.IsPreview.Value;
             entity.IsActive = model.IsActive;
             entity.UpdatedAt = DateTime.UtcNow;
         }

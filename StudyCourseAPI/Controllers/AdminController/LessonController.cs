@@ -74,23 +74,65 @@ namespace StudyCourseAPI.Controllers.AdminController
         }
 
         // ─────────────────────────────────────────────────────────
-        // POST — bulk create (FE sends LessonRequest[])
+        // POST — bulk create lessons within a chapter
+        // Always creates a new chapter containing the lessons
         // ─────────────────────────────────────────────────────────
         [HttpPost]
-        public async Task<IActionResult> Post(long courseId, [FromBody] List<LessonRequest> models)
+        public async Task<IActionResult> Post(long courseId, [FromBody] BulkCreateLessonsRequest request)
         {
-            if (models == null || models.Count == 0)
+            if (request == null || request.Lessons == null || request.Lessons.Count == 0)
                 return BadRequest(new { status = 400, message = "Request body must contain at least one lesson." });
 
             var course = await _courseRepository.Query()
                 .FirstOrDefaultAsync(c => c.Id == courseId && !c.IsDeleted);
             if (course == null) return NotFound();
 
+            // Determine chapter to use
+            Chapter chapter;
+            bool isNewChapter = false;
+
+            if (request.NewChapter != null)
+            {
+                // Create new chapter
+                isNewChapter = true;
+                chapter = new Chapter
+                {
+                    Title = request.NewChapter.Title ?? string.Empty,
+                    Description = request.NewChapter.Description,
+                    OrderIndex = request.NewChapter.OrderIndex,
+                    CourseId = courseId,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _chapterRepository.Add(chapter);
+                await _chapterRepository.SaveChangesAsync();
+            }
+            else if (request.ChapterId.HasValue)
+            {
+                // Use existing chapter
+                chapter = await _chapterRepository.Query()
+                    .FirstOrDefaultAsync(c => c.Id == request.ChapterId.Value && c.CourseId == courseId && !c.IsDeleted);
+
+                if (chapter == null)
+                    return BadRequest(new { status = 400, message = "Chapter not found." });
+            }
+            else
+            {
+                return BadRequest(new { status = 400, message = "Either ChapterId or NewChapter must be provided." });
+            }
+
+            // Assign all lessons to the chapter
+            foreach (var lesson in request.Lessons)
+            {
+                lesson.ChapterId = chapter.Id;
+            }
+
             // Validate each item; collect indexed errors
             var allErrors = new Dictionary<string, object>();
-            for (var i = 0; i < models.Count; i++)
+            for (var i = 0; i < request.Lessons.Count; i++)
             {
-                var (success, errors) = await models[i].ValidateLessonAsync(
+                var (success, errors) = await request.Lessons[i].ValidateLessonAsync(
                     _lessonRepository, _chapterRepository, courseId);
 
                 if (!success && errors != null)
@@ -98,7 +140,7 @@ namespace StudyCourseAPI.Controllers.AdminController
                     foreach (var kv in errors)
                     {
                         if (kv.Value == null || kv.Value.Count == 0) continue;
-                        var key = $"[{i}].{kv.Key}";
+                        var key = $"Lessons[{i}].{kv.Key}";
                         allErrors[key] = kv.Value.Count == 1 ? kv.Value[0] : (object)kv.Value;
                     }
                 }
@@ -111,7 +153,7 @@ namespace StudyCourseAPI.Controllers.AdminController
             var entities = new List<Lesson>();
             var nextIdx = await _lessonRepository.NextOrderIndexAsync(courseId);
 
-            foreach (var model in models)
+            foreach (var model in request.Lessons)
             {
                 var entity = model.GetLesson(courseId);
                 if (entity.OrderIndex <= 0) entity.OrderIndex = nextIdx++;
@@ -131,8 +173,10 @@ namespace StudyCourseAPI.Controllers.AdminController
             return Ok(new
             {
                 success = true,
-                message = $"Created {data.Count} lesson(s) successfully.",
-                data
+                message = $"Created {data.Count} lesson(s) successfully." + (isNewChapter ? $" Created chapter '{chapter.Title}'." : ""),
+                data,
+                chapterId = chapter.Id,
+                chapterTitle = chapter.Title
             });
         }
 
@@ -149,6 +193,7 @@ namespace StudyCourseAPI.Controllers.AdminController
             var entity = await _baseRepository.Query()
                 .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted && x.CourseId == courseId);
             if (entity == null) return NotFound();
+
 
             var (success, errors) = await model.ValidateLessonAsync(
                 _lessonRepository, _chapterRepository, courseId, id);

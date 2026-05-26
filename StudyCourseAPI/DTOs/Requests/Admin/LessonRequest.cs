@@ -21,9 +21,35 @@ namespace StudyCourseAPI.DTOs.Requests.Admin
         /// <summary>Optional chapter assignment. Null = uncategorized.</summary>
         public long? ChapterId { get; set; }
 
-        public bool IsPreview { get; set; } = false;
+        /// <summary>Null = keep existing value on update; defaults to false on create.</summary>
+        public bool? IsPreview { get; set; }
 
         public bool IsActive { get; set; } = true;
+    }
+
+    /// <summary>DTO for creating a new chapter inline when creating lessons.</summary>
+    public class CreateChapterDto
+    {
+        public string Title { get; set; } = null!;
+        public string? Description { get; set; }
+        public int OrderIndex { get; set; } = 0;
+    }
+
+    /// <summary>
+    /// Wrapper body for POST /api/Courses/{courseId}/Lessons.
+    /// One request = one chapter (existing or new) + its lessons.
+    ///
+    /// Rules (priority top → bottom):
+    ///   1. If <see cref="NewChapter"/> is provided → create new chapter, assign all lessons to it.
+    ///   2. Else if <see cref="ChapterId"/> is provided → use that existing chapter.
+    ///   3. Else → return error (chapter is required).
+    /// </summary>
+    public class BulkCreateLessonsRequest
+    {
+        public long? ChapterId { get; set; }
+        public CreateChapterDto? NewChapter { get; set; }
+
+        public List<LessonRequest> Lessons { get; set; } = new();
     }
 
     /// <summary>Payload for PUT /reorder — list of (lessonId, orderIndex, optional chapterId).</summary>

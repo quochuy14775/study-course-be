@@ -11,7 +11,9 @@ using StudyCourseAPI.Repositories;
 using StudyCourseAPI.Services;
 using StudyCourseAPI.Services.Auth;
 
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 #region Database
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -23,11 +25,11 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
-builder.Services.AddScoped<IJwtService,  JwtService>();
+builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IGroqService, GroqService>();
-
 #endregion
+
 #region Identity
 builder.Services
     .AddIdentity<ApplicationUser, Role>()
@@ -35,7 +37,7 @@ builder.Services
     .AddDefaultTokenProviders();
 #endregion
 
-#region Authentication (JWT - chuẩn bị sẵn)
+#region Authentication (JWT)
 var jwtSettings = builder.Configuration.GetSection("Jwt");
 
 builder.Services.AddAuthentication(options =>
@@ -55,9 +57,9 @@ builder.Services.AddAuthentication(options =>
             ValidIssuer = jwtSettings["Issuer"],
             ValidAudience = jwtSettings["Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(jwtSettings["Key"])
+                Encoding.UTF8.GetBytes(jwtSettings["Key"]!)
             ),
-            RoleClaimType = ClaimTypes.Role,   // 🔥 QUAN TRỌNG: dùng standard claim type
+            RoleClaimType = ClaimTypes.Role,
             NameClaimType = ClaimTypes.Name
         };
     });
@@ -68,25 +70,25 @@ builder.Services.AddAuthorization();
 builder.Services.AddControllers();
 #endregion
 
-
 #region CORS
+var allowedOrigins = builder.Configuration["AllowedOrigins"]?.Split(",")
+    ?? ["http://localhost:3000"];
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy
-            .WithOrigins("http://localhost:3000") // FE của bạn
+            .WithOrigins(allowedOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod()
-            .AllowCredentials(); // nếu dùng cookie / auth
+            .AllowCredentials();
     });
 });
-
-
 #endregion
+
 #region Swagger
 builder.Services.AddEndpointsApiExplorer();
-
 builder.Services.AddSwaggerGen(options =>
 {
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -118,25 +120,12 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-#region Middleware pipeline
-
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
-app.UseHttpsRedirection();
-app.UseCors("AllowFrontend"); // ✅ trước auth
-app.UseAuthentication(); // 🔥 QUAN TRỌNG
-app.UseAuthorization();  // 🔥 QUAN TRỌNG
-
-app.MapControllers();
-
-#endregion
+#region Auto migrate & seed
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
+    var db = services.GetRequiredService<ApplicationDbContext>();
+    db.Database.Migrate();
 
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
     var roleManager = services.GetRequiredService<RoleManager<Role>>();
@@ -145,5 +134,17 @@ using (var scope = app.Services.CreateScope())
     await DbInitializer.SeedAdminAsync(userManager, roleManager, config);
     await DbInitializer.SeedUserAsync(userManager, roleManager, config);
 }
+#endregion
+
+#region Middleware pipeline
+app.UseSwagger();
+app.UseSwaggerUI();
+
+// HTTPS được Render xử lý ở reverse proxy, không dùng UseHttpsRedirection
+app.UseCors("AllowFrontend");
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+#endregion
 
 app.Run();
