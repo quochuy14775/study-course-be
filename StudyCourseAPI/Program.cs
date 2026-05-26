@@ -71,8 +71,9 @@ builder.Services.AddControllers();
 #endregion
 
 #region CORS
-var allowedOrigins = builder.Configuration["AllowedOrigins"]?.Split(",")
-    ?? ["http://localhost:3000"];
+var allowedOrigins = builder.Configuration["AllowedOrigins"]
+                         ?.Split(",", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                     ?? ["http://localhost:3000"];
 
 builder.Services.AddCors(options =>
 {
