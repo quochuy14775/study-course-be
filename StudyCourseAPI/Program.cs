@@ -140,6 +140,7 @@ using (var scope = app.Services.CreateScope())
 
     await DbInitializer.SeedAdminAsync(userManager, roleManager, config);
     await DbInitializer.SeedUserAsync(userManager, roleManager, config);
+    await DbInitializer.PatchEmailConfirmedAsync(userManager);
 }
 #endregion
 

@@ -7,6 +7,20 @@ namespace StudyCourseAPI.Data
 {
     public static class DbInitializer
     {
+        public static async Task PatchEmailConfirmedAsync(UserManager<ApplicationUser> userManager)
+        {
+            var emails = new[] { "user@gmail.com", "admin@gmail.com" };
+            foreach (var email in emails)
+            {
+                var user = await userManager.FindByEmailAsync(email);
+                if (user != null && !user.EmailConfirmed)
+                {
+                    user.EmailConfirmed = true;
+                    await userManager.UpdateAsync(user);
+                }
+            }
+        }
+
         public static async Task SeedAdminAsync(
             UserManager<ApplicationUser> userManager,
             RoleManager<Role> roleManager,
