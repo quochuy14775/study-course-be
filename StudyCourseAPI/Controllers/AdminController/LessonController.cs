@@ -87,13 +87,12 @@ namespace StudyCourseAPI.Controllers.AdminController
                 .FirstOrDefaultAsync(c => c.Id == courseId && !c.IsDeleted);
             if (course == null) return NotFound();
 
-            // Determine chapter to use
-            Chapter chapter;
+            // Determine chapter to use (optional — null = Chưa phân loại)
+            Chapter? chapter = null;
             bool isNewChapter = false;
 
             if (request.NewChapter != null)
             {
-                // Create new chapter
                 isNewChapter = true;
                 chapter = new Chapter
                 {
@@ -110,22 +109,18 @@ namespace StudyCourseAPI.Controllers.AdminController
             }
             else if (request.ChapterId.HasValue)
             {
-                // Use existing chapter
                 chapter = await _chapterRepository.Query()
                     .FirstOrDefaultAsync(c => c.Id == request.ChapterId.Value && c.CourseId == courseId && !c.IsDeleted);
 
                 if (chapter == null)
                     return BadRequest(new { status = 400, message = "Chapter not found." });
             }
-            else
-            {
-                return BadRequest(new { status = 400, message = "Either ChapterId or NewChapter must be provided." });
-            }
+            // else: no chapter → lessons go to uncategorized (chapterId = null)
 
-            // Assign all lessons to the chapter
+            // Assign chapter to lessons (null = uncategorized)
             foreach (var lesson in request.Lessons)
             {
-                lesson.ChapterId = chapter.Id;
+                lesson.ChapterId = chapter?.Id;
             }
 
             // Validate each item; collect indexed errors
@@ -173,10 +168,10 @@ namespace StudyCourseAPI.Controllers.AdminController
             return Ok(new
             {
                 success = true,
-                message = $"Created {data.Count} lesson(s) successfully." + (isNewChapter ? $" Created chapter '{chapter.Title}'." : ""),
+                message = $"Created {data.Count} lesson(s) successfully." + (isNewChapter ? $" Created chapter '{chapter!.Title}'." : ""),
                 data,
-                chapterId = chapter.Id,
-                chapterTitle = chapter.Title
+                chapterId = chapter?.Id,
+                chapterTitle = chapter?.Title ?? "Chưa phân loại"
             });
         }
 

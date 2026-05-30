@@ -39,6 +39,7 @@ namespace StudyCourseAPI.Data
             {
                 UserName = adminConfig.Username,
                 Email = adminConfig.Email,
+                EmailConfirmed = true,
                 IsActive = true,
                 IsDeleted = false,
                 CreatedAt = DateTime.UtcNow
@@ -81,6 +82,7 @@ namespace StudyCourseAPI.Data
             {
                 UserName = userConfig.Username,
                 Email = userConfig.Email,
+                EmailConfirmed = true,
                 IsActive = true,
                 IsDeleted = false,
                 CreatedAt = DateTime.UtcNow

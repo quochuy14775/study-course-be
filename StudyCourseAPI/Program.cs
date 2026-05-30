@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using StudyCourseAPI.Configurations;
 using StudyCourseAPI.Data;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
@@ -28,11 +29,16 @@ builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IGroqService, GroqService>();
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
+builder.Services.AddScoped<IEmailService, EmailService>();
 #endregion
 
 #region Identity
 builder.Services
-    .AddIdentity<ApplicationUser, Role>()
+    .AddIdentity<ApplicationUser, Role>(options =>
+    {
+        options.User.RequireUniqueEmail = true;
+    })
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 #endregion
