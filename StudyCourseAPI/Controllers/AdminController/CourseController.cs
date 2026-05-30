@@ -12,7 +12,7 @@ using StudyCourseAPI.Repositories;
 namespace StudyCourseAPI.Controllers.AdminController
 {
     [Route("api/[controller]")]
-    [Authorize(Roles = AppRoles.Admin)]
+    [Authorize]
     public class CoursesController : BaseController<Course>
     {
         private readonly IRepository<Course> _courseRepository;
@@ -39,7 +39,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         public IActionResult Get(ODataQueryOptions<Course> queryOptions)
         {
             var queryable = _courseRepository.Query()
-                .Where(x => !x.IsDeleted);
+                .Where(x => !x.IsDeleted && x.IsActive);
 
             var (count, vm) = queryable.AppendQueryOptions(queryOptions);
 
@@ -70,6 +70,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // ─────────────────────────────────────────────────────────
         // POST
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPost]
         public async Task<IActionResult> Post([FromBody] CourseRequest model)
         {
@@ -102,6 +103,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // ─────────────────────────────────────────────────────────
         // PUT {id} — update
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("{id}")]
         public async Task<IActionResult> Put(long id, [FromBody] CourseRequest model)
         {
@@ -135,6 +137,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // ─────────────────────────────────────────────────────────
         // PUT /delete — bulk soft-delete (matches FE courseServices.deleteCourses)
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("delete")]
         public async Task<IActionResult> Delete([FromBody] List<long> ids)
         {
@@ -161,6 +164,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // ─────────────────────────────────────────────────────────
         // PUT /disable — bulk
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("disable")]
         public async Task<IActionResult> Disable([FromBody] List<long> ids)
         {

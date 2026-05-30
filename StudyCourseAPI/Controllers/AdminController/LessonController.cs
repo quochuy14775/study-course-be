@@ -12,7 +12,7 @@ using StudyCourseAPI.Repositories;
 namespace StudyCourseAPI.Controllers.AdminController
 {
     [Route("api/Courses/{courseId}/[controller]")]
-    [Authorize(Roles = AppRoles.Admin)]
+    [Authorize]
     public class LessonsController : BaseController<Lesson>
     {
         private readonly IRepository<Lesson> _lessonRepository;
@@ -77,6 +77,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // POST — bulk create lessons within a chapter
         // Always creates a new chapter containing the lessons
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPost]
         public async Task<IActionResult> Post(long courseId, [FromBody] BulkCreateLessonsRequest request)
         {
@@ -178,6 +179,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // ─────────────────────────────────────────────────────────
         // PUT {id} — update single
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("{id}")]
         public async Task<IActionResult> Put(long courseId, long id, [FromBody] LessonRequest model)
         {
@@ -213,6 +215,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // ─────────────────────────────────────────────────────────
         // PUT /delete — bulk soft-delete (matches FE lessonService.deleteCourses)
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("delete")]
         public async Task<IActionResult> Delete(long courseId, [FromBody] List<long> ids)
         {
@@ -243,6 +246,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // ─────────────────────────────────────────────────────────
         // PUT /disable — bulk
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("disable")]
         public async Task<IActionResult> Disable(long courseId, [FromBody] List<long> ids)
         {
@@ -265,6 +269,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // ─────────────────────────────────────────────────────────
         // PUT /enable — bulk
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("enable")]
         public async Task<IActionResult> Enable(long courseId, [FromBody] List<long> ids)
         {
@@ -288,6 +293,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // PUT /reorder — drag-drop support (CurriculumBuilder)
         // Body: [{ id, orderIndex, chapterId? }, ...]
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("reorder")]
         public async Task<IActionResult> Reorder(long courseId, [FromBody] List<LessonReorderItem> items)
         {
