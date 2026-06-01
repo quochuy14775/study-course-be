@@ -27,6 +27,8 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
         public string? CreatedBy { get; set; }
         public string? UpdatedBy { get; set; }
 
+        public List<CourseSkillResponse> CourseSkills { get; set; } = new();
+
         public CourseResponse(Course course)
         {
             Id = course.Id;
@@ -47,6 +49,11 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
             IsActive = course.IsActive;
             CreatedBy = course.CreatedBy;
             UpdatedBy = course.UpdatedBy;
+
+            if (course.CourseSkills != null)
+            {
+                CourseSkills = course.CourseSkills.Select(cs => new CourseSkillResponse(cs)).ToList();
+            }
         }
     }
 

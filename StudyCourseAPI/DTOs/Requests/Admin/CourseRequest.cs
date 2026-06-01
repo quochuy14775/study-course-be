@@ -22,5 +22,8 @@ namespace StudyCourseAPI.DTOs.Requests.Admin
 
         /// <summary>Optional list of tag ids to associate with this course.</summary>
         public List<long>? TagIds { get; set; }
+
+        /// <summary>Optional list of skills with contribution percentage.</summary>
+        public List<CourseSkillRequest>? Skills { get; set; }
     }
 }

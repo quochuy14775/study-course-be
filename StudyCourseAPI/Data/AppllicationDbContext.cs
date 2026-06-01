@@ -34,6 +34,17 @@ public class ApplicationDbContext
     public DbSet<CourseTag> CourseTags => Set<CourseTag>();
     public DbSet<CourseBookmark> CourseBookmarks => Set<CourseBookmark>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<Skill> Skills => Set<Skill>();
+    public DbSet<CourseSkill> CourseSkills => Set<CourseSkill>();
+    public DbSet<UserSkill> UserSkills => Set<UserSkill>();
+
+    // Learning interactions
+    public DbSet<LessonNote> LessonNotes => Set<LessonNote>();
+    public DbSet<LessonComment> LessonComments => Set<LessonComment>();
+    public DbSet<CommentLike> CommentLikes => Set<CommentLike>();
+    public DbSet<LessonQuestion> LessonQuestions => Set<LessonQuestion>();
+    public DbSet<QuestionAnswer> QuestionAnswers => Set<QuestionAnswer>();
+    public DbSet<AnswerLike> AnswerLikes => Set<AnswerLike>();
 
     // ========================
     // Model Config
@@ -251,6 +262,189 @@ public class ApplicationDbContext
         });
 
         // ========================
+        // SKILL
+        // ========================
+        builder.Entity<Skill>(entity =>
+        {
+            entity.Property(x => x.Name).IsRequired().HasMaxLength(128);
+            entity.Property(x => x.Description).HasMaxLength(1000);
+            entity.Property(x => x.IconUrl).HasMaxLength(500);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+
+            entity.HasIndex(x => x.Name).IsUnique();
+        });
+
+        // ========================
+        // COURSE-SKILL (M-N)
+        // ========================
+        builder.Entity<CourseSkill>(entity =>
+        {
+            entity.HasKey(x => new { x.CourseId, x.SkillId });
+
+            entity.HasOne(x => x.Course)
+                .WithMany(c => c.CourseSkills)
+                .HasForeignKey(x => x.CourseId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.Skill)
+                .WithMany(s => s.CourseSkills)
+                .HasForeignKey(x => x.SkillId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Property(x => x.ContributionPercentage).HasDefaultValue(0);
+        });
+
+        // ========================
+        // USER-SKILL (M-N)
+        // ========================
+        builder.Entity<UserSkill>(entity =>
+        {
+            entity.HasKey(x => new { x.UserId, x.SkillId });
+
+            entity.HasOne(x => x.User)
+                .WithMany(u => u.UserSkills)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.Skill)
+                .WithMany(s => s.UserSkills)
+                .HasForeignKey(x => x.SkillId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Property(x => x.Proficiency).HasDefaultValue(0);
+            entity.Property(x => x.LastUpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+        });
+
+        // ========================
+        // LESSON NOTE
+        // ========================
+        builder.Entity<LessonNote>(entity =>
+        {
+            entity.Property(x => x.Content).IsRequired().HasMaxLength(5000);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+
+            entity.HasOne(x => x.Lesson)
+                .WithMany()
+                .HasForeignKey(x => x.LessonId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(x => new { x.LessonId, x.UserId });
+        });
+
+        // ========================
+        // LESSON COMMENT
+        // ========================
+        builder.Entity<LessonComment>(entity =>
+        {
+            entity.Property(x => x.Content).IsRequired().HasMaxLength(2000);
+            entity.Property(x => x.LikeCount).HasDefaultValue(0);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+
+            entity.HasOne(x => x.Lesson)
+                .WithMany()
+                .HasForeignKey(x => x.LessonId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(x => x.ParentComment)
+                .WithMany(c => c.Replies)
+                .HasForeignKey(x => x.ParentCommentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(x => x.LessonId);
+            entity.HasIndex(x => x.ParentCommentId);
+        });
+
+        // ========================
+        // COMMENT LIKE
+        // ========================
+        builder.Entity<CommentLike>(entity =>
+        {
+            entity.HasKey(x => new { x.CommentId, x.UserId });
+
+            entity.HasOne(x => x.Comment)
+                .WithMany(c => c.Likes)
+                .HasForeignKey(x => x.CommentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ========================
+        // LESSON QUESTION
+        // ========================
+        builder.Entity<LessonQuestion>(entity =>
+        {
+            entity.Property(x => x.Content).IsRequired().HasMaxLength(2000);
+            entity.Property(x => x.AnswerCount).HasDefaultValue(0);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+
+            entity.HasOne(x => x.Lesson)
+                .WithMany()
+                .HasForeignKey(x => x.LessonId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(x => x.LessonId);
+        });
+
+        // ========================
+        // QUESTION ANSWER
+        // ========================
+        builder.Entity<QuestionAnswer>(entity =>
+        {
+            entity.Property(x => x.Content).IsRequired().HasMaxLength(2000);
+            entity.Property(x => x.LikeCount).HasDefaultValue(0);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+
+            entity.HasOne(x => x.Question)
+                .WithMany(q => q.Answers)
+                .HasForeignKey(x => x.QuestionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(x => x.QuestionId);
+        });
+
+        // ========================
+        // ANSWER LIKE
+        // ========================
+        builder.Entity<AnswerLike>(entity =>
+        {
+            entity.HasKey(x => new { x.AnswerId, x.UserId });
+
+            entity.HasOne(x => x.Answer)
+                .WithMany(a => a.Likes)
+                .HasForeignKey(x => x.AnswerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ========================
         // SOFT DELETE FILTERS
         // ========================
         builder.Entity<Course>().HasQueryFilter(x => !x.IsDeleted);
@@ -262,6 +456,11 @@ public class ApplicationDbContext
         builder.Entity<Tag>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<CourseBookmark>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<Skill>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<LessonNote>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<LessonComment>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<LessonQuestion>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<QuestionAnswer>().HasQueryFilter(x => !x.IsDeleted);
     }
 
     // ========================

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StudyCourseAPI.Data;
@@ -11,9 +12,11 @@ using StudyCourseAPI.Data;
 namespace StudyCourseAPI.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260530133701_1.0.0")]
+    partial class _100
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -108,24 +111,6 @@ namespace StudyCourseAPI.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("AspNetUserTokens", (string)null);
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.AnswerLike", b =>
-                {
-                    b.Property<long>("AnswerId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("AnswerId", "UserId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("AnswerLikes");
                 });
 
             modelBuilder.Entity("StudyCourseAPI.Models.ApplicationUser", b =>
@@ -255,24 +240,6 @@ namespace StudyCourseAPI.Migrations
                     b.HasIndex("CourseId", "OrderIndex");
 
                     b.ToTable("Chapters");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.CommentLike", b =>
-                {
-                    b.Property<long>("CommentId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("CommentId", "UserId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("CommentLikes");
                 });
 
             modelBuilder.Entity("StudyCourseAPI.Models.Course", b =>
@@ -491,153 +458,6 @@ namespace StudyCourseAPI.Migrations
                     b.ToTable("Lessons");
                 });
 
-            modelBuilder.Entity("StudyCourseAPI.Models.LessonComment", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<long>("LessonId")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("LikeCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<long?>("ParentCommentId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LessonId");
-
-                    b.HasIndex("ParentCommentId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("LessonComments");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.LessonNote", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(5000)
-                        .HasColumnType("character varying(5000)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<long>("LessonId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("VideoTimestamp")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("LessonId", "UserId");
-
-                    b.ToTable("LessonNotes");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.LessonQuestion", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<int>("AnswerCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsResolved")
-                        .HasColumnType("boolean");
-
-                    b.Property<long>("LessonId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LessonId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("LessonQuestions");
-                });
-
             modelBuilder.Entity("StudyCourseAPI.Models.Notification", b =>
                 {
                     b.Property<long>("Id")
@@ -688,56 +508,6 @@ namespace StudyCourseAPI.Migrations
                     b.HasIndex("UserId", "IsRead", "CreatedAt");
 
                     b.ToTable("Notifications");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.QuestionAnswer", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsAcceptedAnswer")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("LikeCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<long>("QuestionId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("QuestionAnswers");
                 });
 
             modelBuilder.Entity("StudyCourseAPI.Models.Role", b =>
@@ -1037,25 +807,6 @@ namespace StudyCourseAPI.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("StudyCourseAPI.Models.AnswerLike", b =>
-                {
-                    b.HasOne("StudyCourseAPI.Models.QuestionAnswer", "Answer")
-                        .WithMany("Likes")
-                        .HasForeignKey("AnswerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StudyCourseAPI.Models.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Answer");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("StudyCourseAPI.Models.Chapter", b =>
                 {
                     b.HasOne("StudyCourseAPI.Models.Course", "Course")
@@ -1065,25 +816,6 @@ namespace StudyCourseAPI.Migrations
                         .IsRequired();
 
                     b.Navigation("Course");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.CommentLike", b =>
-                {
-                    b.HasOne("StudyCourseAPI.Models.LessonComment", "Comment")
-                        .WithMany("Likes")
-                        .HasForeignKey("CommentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StudyCourseAPI.Models.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Comment");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("StudyCourseAPI.Models.CourseBookmark", b =>
@@ -1161,70 +893,6 @@ namespace StudyCourseAPI.Migrations
                     b.Navigation("Course");
                 });
 
-            modelBuilder.Entity("StudyCourseAPI.Models.LessonComment", b =>
-                {
-                    b.HasOne("StudyCourseAPI.Models.Lesson", "Lesson")
-                        .WithMany()
-                        .HasForeignKey("LessonId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StudyCourseAPI.Models.LessonComment", "ParentComment")
-                        .WithMany("Replies")
-                        .HasForeignKey("ParentCommentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StudyCourseAPI.Models.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Lesson");
-
-                    b.Navigation("ParentComment");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.LessonNote", b =>
-                {
-                    b.HasOne("StudyCourseAPI.Models.Lesson", "Lesson")
-                        .WithMany()
-                        .HasForeignKey("LessonId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StudyCourseAPI.Models.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Lesson");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.LessonQuestion", b =>
-                {
-                    b.HasOne("StudyCourseAPI.Models.Lesson", "Lesson")
-                        .WithMany()
-                        .HasForeignKey("LessonId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StudyCourseAPI.Models.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Lesson");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("StudyCourseAPI.Models.Notification", b =>
                 {
                     b.HasOne("StudyCourseAPI.Models.ApplicationUser", "User")
@@ -1232,25 +900,6 @@ namespace StudyCourseAPI.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.QuestionAnswer", b =>
-                {
-                    b.HasOne("StudyCourseAPI.Models.LessonQuestion", "Question")
-                        .WithMany("Answers")
-                        .HasForeignKey("QuestionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StudyCourseAPI.Models.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Question");
 
                     b.Navigation("User");
                 });
@@ -1379,23 +1028,6 @@ namespace StudyCourseAPI.Migrations
             modelBuilder.Entity("StudyCourseAPI.Models.Lesson", b =>
                 {
                     b.Navigation("Progresses");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.LessonComment", b =>
-                {
-                    b.Navigation("Likes");
-
-                    b.Navigation("Replies");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.LessonQuestion", b =>
-                {
-                    b.Navigation("Answers");
-                });
-
-            modelBuilder.Entity("StudyCourseAPI.Models.QuestionAnswer", b =>
-                {
-                    b.Navigation("Likes");
                 });
 
             modelBuilder.Entity("StudyCourseAPI.Models.Role", b =>

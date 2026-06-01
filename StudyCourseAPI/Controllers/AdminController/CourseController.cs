@@ -60,6 +60,8 @@ namespace StudyCourseAPI.Controllers.AdminController
         {
             var course = await _courseRepository.Query()
                 .Include(c => c.CourseTags)
+                .Include(c => c.CourseSkills)
+                .ThenInclude(cs => cs.Skill)
                 .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted);
 
             if (course == null) return NotFound();
@@ -89,6 +91,15 @@ namespace StudyCourseAPI.Controllers.AdminController
                 await _courseTagRepository.SaveChangesAsync();
             }
 
+            // Sync skills
+            if (model.Skills != null)
+            {
+                var skillRepo = HttpContext.RequestServices.GetRequiredService<IRepository<Skill>>();
+                var courseSkillRepo = HttpContext.RequestServices.GetRequiredService<IRepository<CourseSkill>>();
+                await entity.SyncSkillsAsync(courseSkillRepo, skillRepo, model.Skills);
+                await courseSkillRepo.SaveChangesAsync();
+            }
+
             return CreatedAtAction(
                 nameof(Get),
                 new { id = entity.Id },
@@ -107,7 +118,9 @@ namespace StudyCourseAPI.Controllers.AdminController
         [HttpPut("{id}")]
         public async Task<IActionResult> Put(long id, [FromBody] CourseRequest model)
         {
-            var entity = await _baseRepository.Query()
+            var entity = await _courseRepository.Query()
+                .Include(c => c.CourseTags)
+                .Include(c => c.CourseSkills)
                 .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
 
             if (entity == null) return NotFound();
@@ -116,14 +129,56 @@ namespace StudyCourseAPI.Controllers.AdminController
             if (!success)
                 return BadRequest(new { status = 400, message = "Validation failed", errors = FlattenErrors(errors) });
 
-            model.ToEntity(entity);
+            var modelProps = model.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            var entityType = entity.GetType();
+            foreach (var p in modelProps)
+            {
+                var target = entityType.GetProperty(p.Name);
+                if (target == null) continue;
+                if (!target.CanWrite) continue;
+
+                var value = p.GetValue(model);
+                if (value == null) continue; // don't overwrite with null
+
+                // Skip identity / audit fields
+                if (string.Equals(p.Name, "Id", System.StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(p.Name, "CreatedAt", System.StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(p.Name, "UpdatedAt", System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (target.PropertyType.IsAssignableFrom(p.PropertyType))
+                {
+                    target.SetValue(entity, value);
+                }
+                else
+                {
+                    try
+                    {
+                        var converted = System.Convert.ChangeType(value, target.PropertyType);
+                        target.SetValue(entity, converted);
+                    }
+                    catch
+                    {
+                        // ignore incompatible types
+                    }
+                }
+            }
             await _baseRepository.SaveChangesAsync();
 
-            // Sync tags if provided
+            // Sync tags
             if (model.TagIds != null)
             {
                 await entity.SyncTagsAsync(_courseTagRepository, _tagRepository, model.TagIds);
                 await _courseTagRepository.SaveChangesAsync();
+            }
+
+            // Sync skills
+            if (model.Skills != null)
+            {
+                var skillRepo = HttpContext.RequestServices.GetRequiredService<IRepository<Skill>>();
+                var courseSkillRepo = HttpContext.RequestServices.GetRequiredService<IRepository<CourseSkill>>();
+                await entity.SyncSkillsAsync(courseSkillRepo, skillRepo, model.Skills);
+                await courseSkillRepo.SaveChangesAsync();
             }
 
             return Ok(new
