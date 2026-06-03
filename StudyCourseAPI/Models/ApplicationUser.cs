@@ -17,5 +17,4 @@ public class ApplicationUser : IdentityUser<long>, IAuditable
     public ICollection<UserLessonProgress> LessonProgresses { get; set; } = new List<UserLessonProgress>();
     public ICollection<CourseBookmark> Bookmarks { get; set; } = new List<CourseBookmark>();
     public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
-    public ICollection<UserSkill> UserSkills { get; set; } = new List<UserSkill>();
 }

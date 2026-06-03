@@ -43,5 +43,6 @@ public class Course : BaseEntity<long>, IAuditable, IUserTracking
     public ICollection<UserCourse> UserCourses { get; set; } = new List<UserCourse>();
     public ICollection<CourseTag> CourseTags { get; set; } = new List<CourseTag>();
     public ICollection<CourseBookmark> Bookmarks { get; set; } = new List<CourseBookmark>();
-    public ICollection<CourseSkill> CourseSkills { get; set; } = new List<CourseSkill>();
+    public ICollection<CourseLanguage> CourseLanguages { get; set; } = new List<CourseLanguage>();
+    public ICollection<CourseFramework> CourseFrameworks { get; set; } = new List<CourseFramework>();
 }

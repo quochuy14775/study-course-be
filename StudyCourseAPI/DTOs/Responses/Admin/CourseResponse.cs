@@ -14,12 +14,10 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
         public bool IsFeatured { get; set; }
         public double Rating { get; set; }
 
-        // Cached stats (auto-maintained by LessonsController on lesson/chapter mutations)
         public int LessonCount { get; set; }
         public int ChapterCount { get; set; }
         public int TotalDurationSeconds { get; set; }
 
-        // Audit
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
         public bool IsDeleted { get; set; }
@@ -27,7 +25,8 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
         public string? CreatedBy { get; set; }
         public string? UpdatedBy { get; set; }
 
-        public List<CourseSkillResponse> CourseSkills { get; set; } = new();
+        public List<LanguageSummaryResponse> Languages { get; set; } = new();
+        public List<FrameworkSummaryResponse> Frameworks { get; set; } = new();
 
         public CourseResponse(Course course)
         {
@@ -50,16 +49,22 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
             CreatedBy = course.CreatedBy;
             UpdatedBy = course.UpdatedBy;
 
-            if (course.CourseSkills != null)
-            {
-                CourseSkills = course.CourseSkills.Select(cs => new CourseSkillResponse(cs)).ToList();
-            }
+            if (course.CourseLanguages != null)
+                Languages = course.CourseLanguages
+                    .Where(cl => cl.Language != null && !cl.Language.IsDeleted)
+                    .Select(cl => new LanguageSummaryResponse(cl.Language))
+                    .ToList();
+
+            if (course.CourseFrameworks != null)
+                Frameworks = course.CourseFrameworks
+                    .Where(cf => cf.Framework != null && !cf.Framework.IsDeleted)
+                    .Select(cf => new FrameworkSummaryResponse(cf.Framework))
+                    .ToList();
         }
     }
 
     public class CourseDetailResponse : CourseResponse
     {
-        /// <summary>Tag ids associated with this course (Language/Framework/Topic).</summary>
         public List<long> TagIds { get; set; } = new();
 
         public CourseDetailResponse(Course course) : base(course)

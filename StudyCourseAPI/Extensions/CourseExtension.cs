@@ -100,10 +100,78 @@ namespace StudyCourseAPI.Extensions
             entity.UpdatedAt = DateTime.UtcNow;
         }
 
-        /// <summary>
-        /// Sync course tags to the provided list of tag ids.
-        /// Removes tags not in the list and adds missing ones.
-        /// </summary>
+        public static async Task SyncLanguagesAsync(
+            this Course course,
+            IRepository<CourseLanguage> courseLanguageRepository,
+            IRepository<Language> languageRepository,
+            List<long>? targetLanguageIds)
+        {
+            targetLanguageIds ??= new List<long>();
+
+            if (targetLanguageIds.Any())
+            {
+                var existingIds = await languageRepository.Query()
+                    .Where(l => targetLanguageIds.Contains(l.Id) && !l.IsDeleted)
+                    .Select(l => l.Id)
+                    .ToListAsync();
+                targetLanguageIds = existingIds;
+            }
+
+            var currentLinks = await courseLanguageRepository.Query()
+                .Where(cl => cl.CourseId == course.Id)
+                .ToListAsync();
+            var currentIds = currentLinks.Select(cl => cl.LanguageId).ToHashSet();
+            var targetIds = targetLanguageIds.ToHashSet();
+
+            foreach (var link in currentLinks)
+            {
+                if (!targetIds.Contains(link.LanguageId))
+                    await courseLanguageRepository.DeleteAsync(link);
+            }
+
+            foreach (var langId in targetIds)
+            {
+                if (!currentIds.Contains(langId))
+                    courseLanguageRepository.Add(new CourseLanguage { CourseId = course.Id, LanguageId = langId });
+            }
+        }
+
+        public static async Task SyncFrameworksAsync(
+            this Course course,
+            IRepository<CourseFramework> courseFrameworkRepository,
+            IRepository<Framework> frameworkRepository,
+            List<long>? targetFrameworkIds)
+        {
+            targetFrameworkIds ??= new List<long>();
+
+            if (targetFrameworkIds.Any())
+            {
+                var existingIds = await frameworkRepository.Query()
+                    .Where(f => targetFrameworkIds.Contains(f.Id) && !f.IsDeleted)
+                    .Select(f => f.Id)
+                    .ToListAsync();
+                targetFrameworkIds = existingIds;
+            }
+
+            var currentLinks = await courseFrameworkRepository.Query()
+                .Where(cf => cf.CourseId == course.Id)
+                .ToListAsync();
+            var currentIds = currentLinks.Select(cf => cf.FrameworkId).ToHashSet();
+            var targetIds = targetFrameworkIds.ToHashSet();
+
+            foreach (var link in currentLinks)
+            {
+                if (!targetIds.Contains(link.FrameworkId))
+                    await courseFrameworkRepository.DeleteAsync(link);
+            }
+
+            foreach (var fwId in targetIds)
+            {
+                if (!currentIds.Contains(fwId))
+                    courseFrameworkRepository.Add(new CourseFramework { CourseId = course.Id, FrameworkId = fwId });
+            }
+        }
+
         public static async Task SyncTagsAsync(
             this Course course,
             IRepository<CourseTag> courseTagRepository,

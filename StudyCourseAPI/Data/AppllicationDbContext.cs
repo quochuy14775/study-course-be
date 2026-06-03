@@ -34,9 +34,11 @@ public class ApplicationDbContext
     public DbSet<CourseTag> CourseTags => Set<CourseTag>();
     public DbSet<CourseBookmark> CourseBookmarks => Set<CourseBookmark>();
     public DbSet<Notification> Notifications => Set<Notification>();
-    public DbSet<Skill> Skills => Set<Skill>();
-    public DbSet<CourseSkill> CourseSkills => Set<CourseSkill>();
-    public DbSet<UserSkill> UserSkills => Set<UserSkill>();
+    public DbSet<Language> Languages => Set<Language>();
+    public DbSet<Framework> Frameworks => Set<Framework>();
+    public DbSet<LanguageFramework> LanguageFrameworks => Set<LanguageFramework>();
+    public DbSet<CourseLanguage> CourseLanguages => Set<CourseLanguage>();
+    public DbSet<CourseFramework> CourseFrameworks => Set<CourseFramework>();
 
     // Learning interactions
     public DbSet<LessonNote> LessonNotes => Set<LessonNote>();
@@ -262,57 +264,91 @@ public class ApplicationDbContext
         });
 
         // ========================
-        // SKILL
+        // LANGUAGE
         // ========================
-        builder.Entity<Skill>(entity =>
+        builder.Entity<Language>(entity =>
         {
             entity.Property(x => x.Name).IsRequired().HasMaxLength(128);
-            entity.Property(x => x.Description).HasMaxLength(1000);
+            entity.Property(x => x.Slug).IsRequired().HasMaxLength(64);
             entity.Property(x => x.IconUrl).HasMaxLength(500);
             entity.Property(x => x.IsActive).HasDefaultValue(true);
 
+            entity.HasIndex(x => x.Slug).IsUnique();
             entity.HasIndex(x => x.Name).IsUnique();
         });
 
         // ========================
-        // COURSE-SKILL (M-N)
+        // FRAMEWORK
         // ========================
-        builder.Entity<CourseSkill>(entity =>
+        builder.Entity<Framework>(entity =>
         {
-            entity.HasKey(x => new { x.CourseId, x.SkillId });
+            entity.Property(x => x.Name).IsRequired().HasMaxLength(128);
+            entity.Property(x => x.Slug).IsRequired().HasMaxLength(64);
+            entity.Property(x => x.IconUrl).HasMaxLength(500);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
 
-            entity.HasOne(x => x.Course)
-                .WithMany(c => c.CourseSkills)
-                .HasForeignKey(x => x.CourseId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(x => x.Skill)
-                .WithMany(s => s.CourseSkills)
-                .HasForeignKey(x => x.SkillId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.Property(x => x.ContributionPercentage).HasDefaultValue(0);
+            entity.HasIndex(x => x.Slug).IsUnique();
+            entity.HasIndex(x => x.Name).IsUnique();
         });
 
         // ========================
-        // USER-SKILL (M-N)
+        // LANGUAGE-FRAMEWORK (M-N)
         // ========================
-        builder.Entity<UserSkill>(entity =>
+        builder.Entity<LanguageFramework>(entity =>
         {
-            entity.HasKey(x => new { x.UserId, x.SkillId });
+            entity.HasKey(x => new { x.LanguageId, x.FrameworkId });
 
-            entity.HasOne(x => x.User)
-                .WithMany(u => u.UserSkills)
-                .HasForeignKey(x => x.UserId)
+            entity.HasOne(x => x.Language)
+                .WithMany(l => l.LanguageFrameworks)
+                .HasForeignKey(x => x.LanguageId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(x => x.Skill)
-                .WithMany(s => s.UserSkills)
-                .HasForeignKey(x => x.SkillId)
+            entity.HasOne(x => x.Framework)
+                .WithMany(f => f.LanguageFrameworks)
+                .HasForeignKey(x => x.FrameworkId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.Property(x => x.Proficiency).HasDefaultValue(0);
-            entity.Property(x => x.LastUpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+            entity.HasIndex(x => x.FrameworkId);
+        });
+
+        // ========================
+        // COURSE-LANGUAGE (M-N)
+        // ========================
+        builder.Entity<CourseLanguage>(entity =>
+        {
+            entity.HasKey(x => new { x.CourseId, x.LanguageId });
+
+            entity.HasOne(x => x.Course)
+                .WithMany(c => c.CourseLanguages)
+                .HasForeignKey(x => x.CourseId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.Language)
+                .WithMany(l => l.CourseLanguages)
+                .HasForeignKey(x => x.LanguageId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(x => x.LanguageId);
+        });
+
+        // ========================
+        // COURSE-FRAMEWORK (M-N)
+        // ========================
+        builder.Entity<CourseFramework>(entity =>
+        {
+            entity.HasKey(x => new { x.CourseId, x.FrameworkId });
+
+            entity.HasOne(x => x.Course)
+                .WithMany(c => c.CourseFrameworks)
+                .HasForeignKey(x => x.CourseId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.Framework)
+                .WithMany(f => f.CourseFrameworks)
+                .HasForeignKey(x => x.FrameworkId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(x => x.FrameworkId);
         });
 
         // ========================
@@ -456,7 +492,8 @@ public class ApplicationDbContext
         builder.Entity<Tag>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<CourseBookmark>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Skill>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<Language>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<Framework>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<LessonNote>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<LessonComment>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<LessonQuestion>().HasQueryFilter(x => !x.IsDeleted);

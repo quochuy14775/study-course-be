@@ -18,18 +18,30 @@ namespace StudyCourseAPI.Controllers.AdminController
         private readonly IRepository<Course> _courseRepository;
         private readonly IRepository<CourseTag> _courseTagRepository;
         private readonly IRepository<Tag> _tagRepository;
+        private readonly IRepository<CourseLanguage> _courseLanguageRepository;
+        private readonly IRepository<CourseFramework> _courseFrameworkRepository;
+        private readonly IRepository<Language> _languageRepository;
+        private readonly IRepository<Framework> _frameworkRepository;
 
         public CoursesController(
             IRepository<Course> baseRepository,
             ICurrentUser currentUser,
             IRepository<Course> courseRepository,
             IRepository<CourseTag> courseTagRepository,
-            IRepository<Tag> tagRepository)
+            IRepository<Tag> tagRepository,
+            IRepository<CourseLanguage> courseLanguageRepository,
+            IRepository<CourseFramework> courseFrameworkRepository,
+            IRepository<Language> languageRepository,
+            IRepository<Framework> frameworkRepository)
             : base(baseRepository, currentUser)
         {
             _courseRepository = courseRepository;
             _courseTagRepository = courseTagRepository;
             _tagRepository = tagRepository;
+            _courseLanguageRepository = courseLanguageRepository;
+            _courseFrameworkRepository = courseFrameworkRepository;
+            _languageRepository = languageRepository;
+            _frameworkRepository = frameworkRepository;
         }
 
         // ─────────────────────────────────────────────────────────
@@ -60,8 +72,8 @@ namespace StudyCourseAPI.Controllers.AdminController
         {
             var course = await _courseRepository.Query()
                 .Include(c => c.CourseTags)
-                .Include(c => c.CourseSkills)
-                .ThenInclude(cs => cs.Skill)
+                .Include(c => c.CourseLanguages).ThenInclude(cl => cl.Language)
+                .Include(c => c.CourseFrameworks).ThenInclude(cf => cf.Framework)
                 .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted);
 
             if (course == null) return NotFound();
@@ -91,13 +103,16 @@ namespace StudyCourseAPI.Controllers.AdminController
                 await _courseTagRepository.SaveChangesAsync();
             }
 
-            // Sync skills
-            if (model.Skills != null)
+            if (model.LanguageIds != null)
             {
-                var skillRepo = HttpContext.RequestServices.GetRequiredService<IRepository<Skill>>();
-                var courseSkillRepo = HttpContext.RequestServices.GetRequiredService<IRepository<CourseSkill>>();
-                await entity.SyncSkillsAsync(courseSkillRepo, skillRepo, model.Skills);
-                await courseSkillRepo.SaveChangesAsync();
+                await entity.SyncLanguagesAsync(_courseLanguageRepository, _languageRepository, model.LanguageIds);
+                await _courseLanguageRepository.SaveChangesAsync();
+            }
+
+            if (model.FrameworkIds != null)
+            {
+                await entity.SyncFrameworksAsync(_courseFrameworkRepository, _frameworkRepository, model.FrameworkIds);
+                await _courseFrameworkRepository.SaveChangesAsync();
             }
 
             return CreatedAtAction(
@@ -120,7 +135,8 @@ namespace StudyCourseAPI.Controllers.AdminController
         {
             var entity = await _courseRepository.Query()
                 .Include(c => c.CourseTags)
-                .Include(c => c.CourseSkills)
+                .Include(c => c.CourseLanguages)
+                .Include(c => c.CourseFrameworks)
                 .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
 
             if (entity == null) return NotFound();
@@ -172,13 +188,16 @@ namespace StudyCourseAPI.Controllers.AdminController
                 await _courseTagRepository.SaveChangesAsync();
             }
 
-            // Sync skills
-            if (model.Skills != null)
+            if (model.LanguageIds != null)
             {
-                var skillRepo = HttpContext.RequestServices.GetRequiredService<IRepository<Skill>>();
-                var courseSkillRepo = HttpContext.RequestServices.GetRequiredService<IRepository<CourseSkill>>();
-                await entity.SyncSkillsAsync(courseSkillRepo, skillRepo, model.Skills);
-                await courseSkillRepo.SaveChangesAsync();
+                await entity.SyncLanguagesAsync(_courseLanguageRepository, _languageRepository, model.LanguageIds);
+                await _courseLanguageRepository.SaveChangesAsync();
+            }
+
+            if (model.FrameworkIds != null)
+            {
+                await entity.SyncFrameworksAsync(_courseFrameworkRepository, _frameworkRepository, model.FrameworkIds);
+                await _courseFrameworkRepository.SaveChangesAsync();
             }
 
             return Ok(new
