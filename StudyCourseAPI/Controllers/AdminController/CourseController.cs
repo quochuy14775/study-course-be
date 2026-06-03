@@ -51,7 +51,9 @@ namespace StudyCourseAPI.Controllers.AdminController
         public IActionResult Get(ODataQueryOptions<Course> queryOptions)
         {
             var queryable = _courseRepository.Query()
-                .Where(x => !x.IsDeleted && x.IsActive);
+                .Where(x => !x.IsDeleted && x.IsActive)
+                .Include(c => c.CourseLanguages).ThenInclude(cl => cl.Language)
+                .Include(c => c.CourseFrameworks).ThenInclude(cf => cf.Framework);
 
             var (count, vm) = queryable.AppendQueryOptions(queryOptions);
 

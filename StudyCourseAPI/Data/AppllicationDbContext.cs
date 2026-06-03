@@ -39,6 +39,8 @@ public class ApplicationDbContext
     public DbSet<LanguageFramework> LanguageFrameworks => Set<LanguageFramework>();
     public DbSet<CourseLanguage> CourseLanguages => Set<CourseLanguage>();
     public DbSet<CourseFramework> CourseFrameworks => Set<CourseFramework>();
+    public DbSet<Roadmap> Roadmaps => Set<Roadmap>();
+    public DbSet<RoadmapCourse> RoadmapCourses => Set<RoadmapCourse>();
 
     // Learning interactions
     public DbSet<LessonNote> LessonNotes => Set<LessonNote>();
@@ -481,6 +483,38 @@ public class ApplicationDbContext
         });
 
         // ========================
+        // ROADMAP
+        // ========================
+        builder.Entity<Roadmap>(entity =>
+        {
+            entity.Property(x => x.Title).IsRequired().HasMaxLength(255);
+            entity.Property(x => x.Description).HasMaxLength(2000);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+
+            entity.HasIndex(x => new { x.IsActive, x.IsDeleted });
+        });
+
+        // ========================
+        // ROADMAP-COURSE (1-N junction with order)
+        // ========================
+        builder.Entity<RoadmapCourse>(entity =>
+        {
+            entity.HasKey(x => new { x.RoadmapId, x.CourseId });
+
+            entity.HasOne(x => x.Roadmap)
+                .WithMany(r => r.RoadmapCourses)
+                .HasForeignKey(x => x.RoadmapId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.Course)
+                .WithMany()
+                .HasForeignKey(x => x.CourseId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(x => new { x.RoadmapId, x.OrderIndex });
+        });
+
+        // ========================
         // SOFT DELETE FILTERS
         // ========================
         builder.Entity<Course>().HasQueryFilter(x => !x.IsDeleted);
@@ -498,6 +532,7 @@ public class ApplicationDbContext
         builder.Entity<LessonComment>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<LessonQuestion>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<QuestionAnswer>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<Roadmap>().HasQueryFilter(x => !x.IsDeleted);
     }
 
     // ========================
