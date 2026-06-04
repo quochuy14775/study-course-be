@@ -31,6 +31,7 @@ namespace StudyCourseAPI.Controllers.UserController
             var userId = _currentUser.GetCurrentUserId();
 
             var notes = await _baseRepository.Query()
+                .AsNoTracking()
                 .Where(n => n.LessonId == lessonId && n.UserId == userId && !n.IsDeleted)
                 .OrderBy(n => n.VideoTimestamp)
                 .Select(n => new NoteResponse(n))

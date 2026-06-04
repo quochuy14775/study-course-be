@@ -4,8 +4,10 @@ using Microsoft.EntityFrameworkCore;
 using StudyCourseAPI.DTOs.Requests;
 using StudyCourseAPI.DTOs.Responses;
 using StudyCourseAPI.Extensions;
+using StudyCourseAPI.Enums;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
+using StudyCourseAPI.Services;
 
 namespace StudyCourseAPI.Controllers.UserController
 {
@@ -16,16 +18,19 @@ namespace StudyCourseAPI.Controllers.UserController
     {
         private readonly IRepository<QuestionAnswer> _answerRepository;
         private readonly IRepository<Lesson> _lessonRepository;
+        private readonly INotificationService _notifier;
 
         public QuestionsController(
             IRepository<LessonQuestion> baseRepository,
             IRepository<QuestionAnswer> answerRepository,
             IRepository<Lesson> lessonRepository,
+            INotificationService notifier,
             ICurrentUser currentUser)
             : base(baseRepository, currentUser)
         {
             _answerRepository = answerRepository;
             _lessonRepository = lessonRepository;
+            _notifier = notifier;
         }
 
         [HttpGet]
@@ -34,10 +39,12 @@ namespace StudyCourseAPI.Controllers.UserController
             var userId = _currentUser.GetCurrentUserId();
 
             var questions = await _baseRepository.Query()
+                .AsNoTracking()
+                .Where(q => q.LessonId == lessonId && !q.IsDeleted)
                 .Include(q => q.User)
                 .Include(q => q.Answers).ThenInclude(a => a.User)
                 .Include(q => q.Answers).ThenInclude(a => a.Likes)
-                .Where(q => q.LessonId == lessonId && !q.IsDeleted)
+                .AsSplitQuery()
                 .OrderByDescending(q => q.CreatedAt)
                 .ToListAsync();
 
@@ -128,6 +135,17 @@ namespace StudyCourseAPI.Controllers.UserController
                 .Include(a => a.Likes)
                 .FirstOrDefaultAsync(a => a.Id == entity.Id);
 
+            // Notify question owner
+            var courseId = await _lessonRepository.Query()
+                .Where(l => l.Id == lessonId).Select(l => l.CourseId).FirstOrDefaultAsync();
+            var actorName = created?.User?.FullName ?? created?.User?.UserName ?? "Một học viên";
+            await _notifier.NotifyAsync(
+                question.UserId,
+                $"{actorName} đã trả lời câu hỏi của bạn",
+                NotificationType.Info,
+                $"/courses/{courseId}/learn/{lessonId}",
+                actorId: userId);
+
             return CreatedAtAction(nameof(GetAll), new { lessonId }, new AnswerResponse(created!, userId));
         }
 
@@ -150,14 +168,17 @@ namespace StudyCourseAPI.Controllers.UserController
     public class AnswersController : BaseController<QuestionAnswer>
     {
         private readonly IRepository<AnswerLike> _answerLikeRepository;
+        private readonly INotificationService _notifier;
 
         public AnswersController(
             IRepository<QuestionAnswer> baseRepository,
             IRepository<AnswerLike> answerLikeRepository,
+            INotificationService notifier,
             ICurrentUser currentUser)
             : base(baseRepository, currentUser)
         {
             _answerLikeRepository = answerLikeRepository;
+            _notifier = notifier;
         }
 
         [HttpPost("{answerId:long}/like")]
@@ -167,11 +188,13 @@ namespace StudyCourseAPI.Controllers.UserController
 
             var entity = await _baseRepository.Query()
                 .Include(a => a.Likes)
+                .Include(a => a.User)
                 .FirstOrDefaultAsync(a => a.Id == answerId && !a.IsDeleted);
 
             if (entity == null) return NotFound();
 
             var existingLike = entity.Likes.FirstOrDefault(l => l.UserId == userId);
+            var wasLike = existingLike == null;
 
             if (existingLike != null)
             {
@@ -186,7 +209,17 @@ namespace StudyCourseAPI.Controllers.UserController
 
             await _baseRepository.SaveChangesAsync();
 
-            return Ok(new { liked = existingLike == null, likeCount = entity.LikeCount });
+            if (wasLike)
+            {
+                await _notifier.NotifyAsync(
+                    entity.UserId,
+                    "Có người vừa thích câu trả lời của bạn",
+                    NotificationType.Success,
+                    null,
+                    actorId: userId);
+            }
+
+            return Ok(new { liked = wasLike, likeCount = entity.LikeCount });
         }
 
         [HttpPost("{answerId:long}/accept")]
@@ -215,6 +248,16 @@ namespace StudyCourseAPI.Controllers.UserController
                 entity.Question.IsResolved = true;
 
             await _baseRepository.SaveChangesAsync();
+
+            if (entity.IsAcceptedAnswer)
+            {
+                await _notifier.NotifyAsync(
+                    entity.UserId,
+                    "🎉 Câu trả lời của bạn đã được chấp nhận!",
+                    NotificationType.Success,
+                    null,
+                    actorId: userId);
+            }
 
             return Ok(new { isAccepted = entity.IsAcceptedAnswer });
         }

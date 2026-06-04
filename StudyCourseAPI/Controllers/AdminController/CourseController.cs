@@ -5,9 +5,11 @@ using Microsoft.EntityFrameworkCore;
 using StudyCourseAPI.DTOs.Requests.Admin;
 using StudyCourseAPI.DTOs.Responses;
 using StudyCourseAPI.DTOs.Responses.Admin;
+using StudyCourseAPI.Enums;
 using StudyCourseAPI.Extensions;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
+using StudyCourseAPI.Services;
 
 namespace StudyCourseAPI.Controllers.AdminController
 {
@@ -22,6 +24,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         private readonly IRepository<CourseFramework> _courseFrameworkRepository;
         private readonly IRepository<Language> _languageRepository;
         private readonly IRepository<Framework> _frameworkRepository;
+        private readonly INotificationService _notifier;
 
         public CoursesController(
             IRepository<Course> baseRepository,
@@ -32,7 +35,8 @@ namespace StudyCourseAPI.Controllers.AdminController
             IRepository<CourseLanguage> courseLanguageRepository,
             IRepository<CourseFramework> courseFrameworkRepository,
             IRepository<Language> languageRepository,
-            IRepository<Framework> frameworkRepository)
+            IRepository<Framework> frameworkRepository,
+            INotificationService notifier)
             : base(baseRepository, currentUser)
         {
             _courseRepository = courseRepository;
@@ -42,44 +46,49 @@ namespace StudyCourseAPI.Controllers.AdminController
             _courseFrameworkRepository = courseFrameworkRepository;
             _languageRepository = languageRepository;
             _frameworkRepository = frameworkRepository;
+            _notifier = notifier;
         }
 
         // ─────────────────────────────────────────────────────────
-        // GET — list with OData
+        // GET — list with OData (public — no auth required)
+        // AsSplitQuery avoids cartesian explosion with multiple Includes.
+        // AppendQueryOptions already applies AsNoTracking.
         // ─────────────────────────────────────────────────────────
+        [AllowAnonymous]
         [HttpGet]
-        public IActionResult Get(ODataQueryOptions<Course> queryOptions)
+        public async Task<IActionResult> Get(ODataQueryOptions<Course> queryOptions)
         {
             var queryable = _courseRepository.Query()
                 .Where(x => !x.IsDeleted && x.IsActive)
                 .Include(c => c.CourseLanguages).ThenInclude(cl => cl.Language)
-                .Include(c => c.CourseFrameworks).ThenInclude(cf => cf.Framework);
+                .Include(c => c.CourseFrameworks).ThenInclude(cf => cf.Framework)
+                .AsSplitQuery();
 
-            var (count, vm) = queryable.AppendQueryOptions(queryOptions);
+            var (count, vm) = await queryable.AppendQueryOptionsAsync(queryOptions);
 
-            var response = new ODataResponse<CourseResponse>
+            return Ok(new ODataResponse<CourseResponse>
             {
                 Count = count,
                 Value = vm.Select(x => new CourseResponse(x))
-            };
-
-            return Ok(response);
+            });
         }
 
         // ─────────────────────────────────────────────────────────
-        // GET single
+        // GET single (public)
         // ─────────────────────────────────────────────────────────
+        [AllowAnonymous]
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(long id)
         {
             var course = await _courseRepository.Query()
+                .AsNoTracking()
                 .Include(c => c.CourseTags)
                 .Include(c => c.CourseLanguages).ThenInclude(cl => cl.Language)
                 .Include(c => c.CourseFrameworks).ThenInclude(cf => cf.Framework)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted);
 
             if (course == null) return NotFound();
-
             return Ok(new CourseDetailResponse(course));
         }
 
@@ -116,6 +125,13 @@ namespace StudyCourseAPI.Controllers.AdminController
                 await entity.SyncFrameworksAsync(_courseFrameworkRepository, _frameworkRepository, model.FrameworkIds);
                 await _courseFrameworkRepository.SaveChangesAsync();
             }
+
+            // Broadcast new-course notification to all users
+            await _notifier.NotifyAllAsync(
+                $"🎓 Khoá học mới: {entity.Title}",
+                NotificationType.Info,
+                $"/courses/{entity.Id}/learn",
+                actorId: _currentUser.GetCurrentUserId());
 
             return CreatedAtAction(
                 nameof(Get),
@@ -211,7 +227,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         }
 
         // ─────────────────────────────────────────────────────────
-        // PUT /delete — bulk soft-delete (matches FE courseServices.deleteCourses)
+        // PUT /delete — bulk soft-delete via ExecuteUpdateAsync (no entity load)
         // ─────────────────────────────────────────────────────────
         [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("delete")]
@@ -220,21 +236,17 @@ namespace StudyCourseAPI.Controllers.AdminController
             if (ids == null || ids.Count == 0)
                 return BadRequest(new { status = 400, message = "Provide at least one course id." });
 
-            var entities = await _baseRepository.Query()
+            var now = DateTime.UtcNow;
+            var affected = await _baseRepository.Query()
                 .Where(x => ids.Contains(x.Id) && !x.IsDeleted)
-                .ToListAsync();
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(c => c.IsDeleted, true)
+                    .SetProperty(c => c.IsActive, false)
+                    .SetProperty(c => c.UpdatedAt, now));
 
-            if (!entities.Any()) return NotFound();
-
-            foreach (var entity in entities)
-            {
-                entity.IsDeleted = true;
-                entity.IsActive = false;
-                entity.UpdatedAt = DateTime.UtcNow;
-            }
-
-            await _baseRepository.SaveChangesAsync();
-            return Ok(new { success = true, deleted = entities.Count });
+            return affected == 0
+                ? NotFound()
+                : Ok(new { success = true, deleted = affected });
         }
 
         // ─────────────────────────────────────────────────────────
@@ -244,20 +256,14 @@ namespace StudyCourseAPI.Controllers.AdminController
         [HttpPut("disable")]
         public async Task<IActionResult> Disable([FromBody] List<long> ids)
         {
-            var entities = await _baseRepository.Query()
+            var now = DateTime.UtcNow;
+            var affected = await _baseRepository.Query()
                 .Where(x => ids.Contains(x.Id) && !x.IsDeleted)
-                .ToListAsync();
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(c => c.IsActive, false)
+                    .SetProperty(c => c.UpdatedAt, now));
 
-            if (!entities.Any()) return NotFound();
-
-            foreach (var entity in entities)
-            {
-                entity.IsActive = false;
-                entity.UpdatedAt = DateTime.UtcNow;
-            }
-
-            await _baseRepository.SaveChangesAsync();
-            return NoContent();
+            return affected == 0 ? NotFound() : NoContent();
         }
 
         // ─────────────────────────────────────────────────────────
@@ -266,34 +272,31 @@ namespace StudyCourseAPI.Controllers.AdminController
         [HttpPut("enable")]
         public async Task<IActionResult> Enable([FromBody] List<long> ids)
         {
-            var entities = await _baseRepository.Query()
+            var now = DateTime.UtcNow;
+            var affected = await _baseRepository.Query()
                 .Where(x => ids.Contains(x.Id) && !x.IsDeleted)
-                .ToListAsync();
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(c => c.IsActive, true)
+                    .SetProperty(c => c.UpdatedAt, now));
 
-            if (!entities.Any()) return NotFound();
-
-            foreach (var entity in entities)
-            {
-                entity.IsActive = true;
-                entity.UpdatedAt = DateTime.UtcNow;
-            }
-
-            await _baseRepository.SaveChangesAsync();
-            return NoContent();
+            return affected == 0 ? NotFound() : NoContent();
         }
 
         // ─────────────────────────────────────────────────────────
-        // GET /suggest?keyword=... — quick search for autocomplete
+        // GET /suggest?keyword=... — quick search for autocomplete (public)
         // ─────────────────────────────────────────────────────────
+        [AllowAnonymous]
         [HttpGet("suggest")]
         public async Task<IActionResult> Suggest([FromQuery] string? keyword)
         {
             if (string.IsNullOrWhiteSpace(keyword))
                 return Ok(Array.Empty<object>());
 
-            var lower = keyword.ToLower();
+            // EF.Functions.ILike is PostgreSQL native case-insensitive match — uses index, no full-table .ToLower()
+            var pattern = $"%{keyword}%";
             var courses = await _baseRepository.Query()
-                .Where(x => !x.IsDeleted && x.IsActive && x.Title.ToLower().Contains(lower))
+                .AsNoTracking()
+                .Where(x => !x.IsDeleted && x.IsActive && EF.Functions.ILike(x.Title, pattern))
                 .OrderBy(x => x.Title)
                 .Select(x => new { x.Id, x.Title, x.ImageUrl })
                 .Take(10)

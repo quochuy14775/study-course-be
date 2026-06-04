@@ -35,23 +35,22 @@ public class RoadmapsController : BaseController<Roadmap>
     // GET — list with OData
     // ─────────────────────────────────────────────────────────
     [HttpGet]
-    public IActionResult Get(ODataQueryOptions<Roadmap> queryOptions)
+    public async Task<IActionResult> Get(ODataQueryOptions<Roadmap> queryOptions)
     {
         var queryable = _roadmapRepository.Query()
             .Where(r => !r.IsDeleted && r.IsActive)
             .Include(r => r.RoadmapCourses)
                 .ThenInclude(rc => rc.Course)
-                    .ThenInclude(c => c.Chapters);
+                    .ThenInclude(c => c.Chapters)
+            .AsSplitQuery();
 
-        var (count, vm) = queryable.AppendQueryOptions(queryOptions);
+        var (count, vm) = await queryable.AppendQueryOptionsAsync(queryOptions);
 
-        var response = new ODataResponse<RoadmapResponse>
+        return Ok(new ODataResponse<RoadmapResponse>
         {
             Count = count,
             Value = vm.Select(r => new RoadmapResponse(r))
-        };
-
-        return Ok(response);
+        });
     }
 
     // ─────────────────────────────────────────────────────────
@@ -61,13 +60,14 @@ public class RoadmapsController : BaseController<Roadmap>
     public async Task<IActionResult> Get(long id)
     {
         var roadmap = await _roadmapRepository.Query()
+            .AsNoTracking()
             .Include(r => r.RoadmapCourses)
                 .ThenInclude(rc => rc.Course)
                     .ThenInclude(c => c.Chapters)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted);
 
         if (roadmap == null) return NotFound();
-
         return Ok(new RoadmapResponse(roadmap));
     }
 
@@ -147,21 +147,15 @@ public class RoadmapsController : BaseController<Roadmap>
         if (ids == null || ids.Count == 0)
             return BadRequest(new { status = 400, message = "Provide at least one roadmap id." });
 
-        var entities = await _roadmapRepository.Query()
+        var now = DateTime.UtcNow;
+        var affected = await _roadmapRepository.Query()
             .Where(r => ids.Contains(r.Id) && !r.IsDeleted)
-            .ToListAsync();
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.IsDeleted, true)
+                .SetProperty(r => r.IsActive, false)
+                .SetProperty(r => r.UpdatedAt, now));
 
-        if (!entities.Any()) return NotFound();
-
-        foreach (var e in entities)
-        {
-            e.IsDeleted = true;
-            e.IsActive = false;
-            e.UpdatedAt = DateTime.UtcNow;
-        }
-
-        await _roadmapRepository.SaveChangesAsync();
-        return Ok(new { success = true, deleted = entities.Count });
+        return affected == 0 ? NotFound() : Ok(new { success = true, deleted = affected });
     }
 
     // ─────────────────────────────────────────────────────────
@@ -171,20 +165,14 @@ public class RoadmapsController : BaseController<Roadmap>
     [HttpPut("disable")]
     public async Task<IActionResult> Disable([FromBody] List<long> ids)
     {
-        var entities = await _roadmapRepository.Query()
+        var now = DateTime.UtcNow;
+        var affected = await _roadmapRepository.Query()
             .Where(r => ids.Contains(r.Id) && !r.IsDeleted)
-            .ToListAsync();
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.IsActive, false)
+                .SetProperty(r => r.UpdatedAt, now));
 
-        if (!entities.Any()) return NotFound();
-
-        foreach (var e in entities)
-        {
-            e.IsActive = false;
-            e.UpdatedAt = DateTime.UtcNow;
-        }
-
-        await _roadmapRepository.SaveChangesAsync();
-        return NoContent();
+        return affected == 0 ? NotFound() : NoContent();
     }
 
     // ─────────────────────────────────────────────────────────
@@ -193,20 +181,14 @@ public class RoadmapsController : BaseController<Roadmap>
     [HttpPut("enable")]
     public async Task<IActionResult> Enable([FromBody] List<long> ids)
     {
-        var entities = await _roadmapRepository.Query()
+        var now = DateTime.UtcNow;
+        var affected = await _roadmapRepository.Query()
             .Where(r => ids.Contains(r.Id) && !r.IsDeleted)
-            .ToListAsync();
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.IsActive, true)
+                .SetProperty(r => r.UpdatedAt, now));
 
-        if (!entities.Any()) return NotFound();
-
-        foreach (var e in entities)
-        {
-            e.IsActive = true;
-            e.UpdatedAt = DateTime.UtcNow;
-        }
-
-        await _roadmapRepository.SaveChangesAsync();
-        return NoContent();
+        return affected == 0 ? NotFound() : NoContent();
     }
 
     private static Dictionary<string, object> FlattenErrors(Dictionary<string, List<string>>? errors)

@@ -26,23 +26,29 @@ namespace StudyCourseAPI.Controllers.AdminController
             _languageRepository = languageRepository;
         }
 
+        [AllowAnonymous]
         [HttpGet]
         public async Task<IActionResult> Get()
         {
             var frameworks = await _baseRepository.Query()
-                .Include(f => f.LanguageFrameworks).ThenInclude(lf => lf.Language)
+                .AsNoTracking()
                 .Where(f => !f.IsDeleted && f.IsActive)
+                .Include(f => f.LanguageFrameworks).ThenInclude(lf => lf.Language)
+                .AsSplitQuery()
                 .OrderBy(f => f.Name)
                 .ToListAsync();
 
             return Ok(frameworks.Select(f => new FrameworkResponse(f)));
         }
 
+        [AllowAnonymous]
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(long id)
         {
             var entity = await _baseRepository.Query()
+                .AsNoTracking()
                 .Include(f => f.LanguageFrameworks).ThenInclude(lf => lf.Language)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(f => f.Id == id && !f.IsDeleted);
 
             if (entity == null) return NotFound();
@@ -128,24 +134,28 @@ namespace StudyCourseAPI.Controllers.AdminController
         {
             languageIds ??= new List<long>();
 
-            var current = await _languageFrameworkRepository.Query()
+            var currentTask = _languageFrameworkRepository.Query()
                 .Where(lf => lf.FrameworkId == frameworkId)
                 .ToListAsync();
 
-            var validIds = languageIds.Any()
-                ? await _languageRepository.Query()
+            var validIdsTask = languageIds.Count == 0
+                ? Task.FromResult(new List<long>())
+                : _languageRepository.Query()
+                    .AsNoTracking()
                     .Where(l => languageIds.Contains(l.Id) && !l.IsDeleted)
                     .Select(l => l.Id)
-                    .ToListAsync()
-                : new List<long>();
+                    .ToListAsync();
 
+            await Task.WhenAll(currentTask, validIdsTask);
+
+            var current = currentTask.Result;
+            var targetIds = validIdsTask.Result.ToHashSet();
             var currentIds = current.Select(lf => lf.LanguageId).ToHashSet();
-            var targetIds = validIds.ToHashSet();
 
             foreach (var link in current)
             {
                 if (!targetIds.Contains(link.LanguageId))
-                    await _languageFrameworkRepository.DeleteAsync(link);
+                    _languageFrameworkRepository.Remove(link);
             }
 
             foreach (var langId in targetIds)

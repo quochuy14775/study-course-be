@@ -41,6 +41,7 @@ public class ApplicationDbContext
     public DbSet<CourseFramework> CourseFrameworks => Set<CourseFramework>();
     public DbSet<Roadmap> Roadmaps => Set<Roadmap>();
     public DbSet<RoadmapCourse> RoadmapCourses => Set<RoadmapCourse>();
+    public DbSet<Article> Articles => Set<Article>();
 
     // Learning interactions
     public DbSet<LessonNote> LessonNotes => Set<LessonNote>();
@@ -533,6 +534,28 @@ public class ApplicationDbContext
         builder.Entity<LessonQuestion>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<QuestionAnswer>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Roadmap>().HasQueryFilter(x => !x.IsDeleted);
+
+        // ========================
+        // ARTICLE
+        // ========================
+        builder.Entity<Article>(entity =>
+        {
+            entity.Property(x => x.Title).IsRequired().HasMaxLength(255);
+            entity.Property(x => x.Slug).IsRequired().HasMaxLength(128);
+            entity.Property(x => x.Excerpt).HasMaxLength(1000);
+            entity.Property(x => x.ThumbnailUrl).HasMaxLength(500);
+            entity.Property(x => x.Author).HasMaxLength(128);
+            entity.Property(x => x.Category).HasMaxLength(64);
+            entity.Property(x => x.ReadTimeMinutes).HasDefaultValue(5);
+            entity.Property(x => x.ViewCount).HasDefaultValue(0);
+            entity.Property(x => x.LikeCount).HasDefaultValue(0);
+            entity.Property(x => x.IsFeatured).HasDefaultValue(false);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+            entity.HasIndex(x => x.Slug).IsUnique();
+            entity.HasIndex(x => new { x.IsActive, x.IsDeleted });
+            entity.HasIndex(x => x.Category);
+        });
+        builder.Entity<Article>().HasQueryFilter(x => !x.IsDeleted);
     }
 
     // ========================

@@ -4,8 +4,10 @@ using Microsoft.EntityFrameworkCore;
 using StudyCourseAPI.DTOs.Requests;
 using StudyCourseAPI.DTOs.Responses;
 using StudyCourseAPI.Extensions;
+using StudyCourseAPI.Enums;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
+using StudyCourseAPI.Services;
 
 namespace StudyCourseAPI.Controllers.UserController
 {
@@ -16,16 +18,19 @@ namespace StudyCourseAPI.Controllers.UserController
     {
         private readonly IRepository<CommentLike> _commentLikeRepository;
         private readonly IRepository<Lesson> _lessonRepository;
+        private readonly INotificationService _notifier;
 
         public CommentsController(
             IRepository<LessonComment> baseRepository,
             IRepository<CommentLike> commentLikeRepository,
             IRepository<Lesson> lessonRepository,
+            INotificationService notifier,
             ICurrentUser currentUser)
             : base(baseRepository, currentUser)
         {
             _commentLikeRepository = commentLikeRepository;
             _lessonRepository = lessonRepository;
+            _notifier = notifier;
         }
 
         [HttpGet]
@@ -34,11 +39,13 @@ namespace StudyCourseAPI.Controllers.UserController
             var userId = _currentUser.GetCurrentUserId();
 
             var comments = await _baseRepository.Query()
+                .AsNoTracking()
+                .Where(c => c.LessonId == lessonId && c.ParentCommentId == null && !c.IsDeleted)
                 .Include(c => c.User)
                 .Include(c => c.Likes)
                 .Include(c => c.Replies).ThenInclude(r => r.User)
                 .Include(c => c.Replies).ThenInclude(r => r.Likes)
-                .Where(c => c.LessonId == lessonId && c.ParentCommentId == null && !c.IsDeleted)
+                .AsSplitQuery()
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
 
@@ -68,6 +75,26 @@ namespace StudyCourseAPI.Controllers.UserController
                 .Include(c => c.Likes)
                 .Include(c => c.Replies)
                 .FirstOrDefaultAsync(c => c.Id == entity.Id);
+
+            // Notify parent commenter on reply
+            if (model.ParentCommentId.HasValue)
+            {
+                var parent = await _baseRepository.Query()
+                    .Include(c => c.User)
+                    .FirstOrDefaultAsync(c => c.Id == model.ParentCommentId.Value && !c.IsDeleted);
+                if (parent is not null)
+                {
+                    var courseId = await _lessonRepository.Query()
+                        .Where(l => l.Id == lessonId).Select(l => l.CourseId).FirstOrDefaultAsync();
+                    var actorName = created?.User?.FullName ?? created?.User?.UserName ?? "Một học viên";
+                    await _notifier.NotifyAsync(
+                        parent.UserId,
+                        $"{actorName} đã trả lời bình luận của bạn",
+                        NotificationType.Info,
+                        $"/courses/{courseId}/learn/{lessonId}",
+                        actorId: userId);
+                }
+            }
 
             return CreatedAtAction(nameof(GetAll), new { lessonId }, new CommentResponse(created!, userId));
         }
@@ -101,6 +128,7 @@ namespace StudyCourseAPI.Controllers.UserController
             if (entity == null) return NotFound();
 
             var existingLike = entity.Likes.FirstOrDefault(l => l.UserId == userId);
+            var wasLike = existingLike == null;
 
             if (existingLike != null)
             {
@@ -115,7 +143,20 @@ namespace StudyCourseAPI.Controllers.UserController
 
             await _baseRepository.SaveChangesAsync();
 
-            return Ok(new { liked = existingLike == null, likeCount = entity.LikeCount });
+            // Notify comment owner when liked
+            if (wasLike)
+            {
+                var courseId = await _lessonRepository.Query()
+                    .Where(l => l.Id == lessonId).Select(l => l.CourseId).FirstOrDefaultAsync();
+                await _notifier.NotifyAsync(
+                    entity.UserId,
+                    "Có người vừa thích bình luận của bạn ❤️",
+                    NotificationType.Success,
+                    $"/courses/{courseId}/learn/{lessonId}",
+                    actorId: userId);
+            }
+
+            return Ok(new { liked = wasLike, likeCount = entity.LikeCount });
         }
 
         private static Dictionary<string, object> FlattenErrors(Dictionary<string, List<string>>? errors)

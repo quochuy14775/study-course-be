@@ -32,16 +32,24 @@ namespace StudyCourseAPI.Controllers.AdminController
         [HttpGet]
         public async Task<IActionResult> Get(long courseId)
         {
-            var course = await _courseRepository.Query()
-                .FirstOrDefaultAsync(c => c.Id == courseId && !c.IsDeleted);
-
-            if (course == null) return NotFound();
-
+            // Combined check + fetch: if course doesn't exist, chapters list will be empty.
+            // Use a single round-trip with AnyAsync for course existence check IF empty result.
             var chapters = await _chapterRepository.Query()
+                .AsNoTracking()
                 .Where(c => c.CourseId == courseId && !c.IsDeleted)
-                .Include(c => c.Lessons)
+                .Include(c => c.Lessons.Where(l => !l.IsDeleted))
+                .AsSplitQuery()
                 .OrderBy(c => c.OrderIndex)
                 .ToListAsync();
+
+            // Only hit DB for course-existence if no chapters (cheap recovery, common case has data)
+            if (chapters.Count == 0)
+            {
+                var courseExists = await _courseRepository.Query()
+                    .AsNoTracking()
+                    .AnyAsync(c => c.Id == courseId && !c.IsDeleted);
+                if (!courseExists) return NotFound();
+            }
 
             return Ok(chapters.Select(c => new ChapterResponse(c)));
         }
@@ -53,12 +61,13 @@ namespace StudyCourseAPI.Controllers.AdminController
         public async Task<IActionResult> Get(long courseId, long id)
         {
             var chapter = await _chapterRepository.Query()
+                .AsNoTracking()
                 .Where(c => c.Id == id && c.CourseId == courseId && !c.IsDeleted)
-                .Include(c => c.Lessons)
+                .Include(c => c.Lessons.Where(l => !l.IsDeleted))
+                .AsSplitQuery()
                 .FirstOrDefaultAsync();
 
             if (chapter == null) return NotFound();
-
             return Ok(new ChapterResponse(chapter));
         }
 
@@ -157,20 +166,14 @@ namespace StudyCourseAPI.Controllers.AdminController
         [HttpPut("disable")]
         public async Task<IActionResult> Disable(long courseId, [FromBody] List<long> ids)
         {
-            var entities = await _chapterRepository.Query()
+            var now = DateTime.UtcNow;
+            var affected = await _chapterRepository.Query()
                 .Where(c => ids.Contains(c.Id) && c.CourseId == courseId && !c.IsDeleted)
-                .ToListAsync();
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(c => c.IsActive, false)
+                    .SetProperty(c => c.UpdatedAt, now));
 
-            if (!entities.Any()) return NotFound();
-
-            foreach (var entity in entities)
-            {
-                entity.IsActive = false;
-                entity.UpdatedAt = DateTime.UtcNow;
-            }
-
-            await _chapterRepository.SaveChangesAsync();
-            return NoContent();
+            return affected == 0 ? NotFound() : NoContent();
         }
 
         // ─────────────────────────────────────────────────────────
@@ -180,20 +183,14 @@ namespace StudyCourseAPI.Controllers.AdminController
         [HttpPut("enable")]
         public async Task<IActionResult> Enable(long courseId, [FromBody] List<long> ids)
         {
-            var entities = await _chapterRepository.Query()
+            var now = DateTime.UtcNow;
+            var affected = await _chapterRepository.Query()
                 .Where(c => ids.Contains(c.Id) && c.CourseId == courseId && !c.IsDeleted)
-                .ToListAsync();
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(c => c.IsActive, true)
+                    .SetProperty(c => c.UpdatedAt, now));
 
-            if (!entities.Any()) return NotFound();
-
-            foreach (var entity in entities)
-            {
-                entity.IsActive = true;
-                entity.UpdatedAt = DateTime.UtcNow;
-            }
-
-            await _chapterRepository.SaveChangesAsync();
-            return NoContent();
+            return affected == 0 ? NotFound() : NoContent();
         }
     }
 }
