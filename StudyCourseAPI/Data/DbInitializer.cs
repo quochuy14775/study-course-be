@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using StudyCourseAPI.Configurations;
+using StudyCourseAPI.Enums;
 using StudyCourseAPI.Models;
 
 namespace StudyCourseAPI.Data
@@ -109,5 +111,125 @@ namespace StudyCourseAPI.Data
                 await userManager.AddToRoleAsync(user, AppRoles.User);
             }
         }
+
+        /// <summary>
+        /// Demo content for the Quiz feature: a lesson quiz on every lesson of every course,
+        /// plus a course test per course. Idempotent — skips whatever already has a quiz,
+        /// same as SeedAdminAsync/SeedUserAsync above, so re-running on every startup is safe.
+        /// </summary>
+        public static async Task SeedQuizzesAsync(Data.ApplicationDbContext db)
+        {
+            var courses = await db.Courses
+                .Include(c => c.Lessons)
+                .Where(c => !c.IsDeleted)
+                .OrderBy(c => c.Id)
+                .ToListAsync();
+
+            if (courses.Count == 0) return;
+
+            var sampleQuestions = new List<QuizQuestion>
+            {
+                new()
+                {
+                    Content = "Trong JavaScript, từ khóa nào dùng để khai báo một biến không thể gán lại giá trị?",
+                    OrderIndex = 1,
+                    Points = 1,
+                    Options = new List<QuizOptionItem>
+                    {
+                        new() { OptionId = 1, Content = "var", IsCorrect = false, OrderIndex = 1 },
+                        new() { OptionId = 2, Content = "let", IsCorrect = false, OrderIndex = 2 },
+                        new() { OptionId = 3, Content = "const", IsCorrect = true, OrderIndex = 3 },
+                        new() { OptionId = 4, Content = "static", IsCorrect = false, OrderIndex = 4 },
+                    },
+                },
+                new()
+                {
+                    Content = "Kết quả của typeof \"123\" là gì?",
+                    OrderIndex = 2,
+                    Points = 1,
+                    Options = new List<QuizOptionItem>
+                    {
+                        new() { OptionId = 1, Content = "\"number\"", IsCorrect = false, OrderIndex = 1 },
+                        new() { OptionId = 2, Content = "\"string\"", IsCorrect = true, OrderIndex = 2 },
+                        new() { OptionId = 3, Content = "\"object\"", IsCorrect = false, OrderIndex = 3 },
+                        new() { OptionId = 4, Content = "\"undefined\"", IsCorrect = false, OrderIndex = 4 },
+                    },
+                },
+                new()
+                {
+                    Content = "Biểu thức nào sau đây trả về NaN?",
+                    OrderIndex = 3,
+                    Points = 1,
+                    Options = new List<QuizOptionItem>
+                    {
+                        new() { OptionId = 1, Content = "1 + \"1\"", IsCorrect = false, OrderIndex = 1 },
+                        new() { OptionId = 2, Content = "\"a\" * 2", IsCorrect = true, OrderIndex = 2 },
+                        new() { OptionId = 3, Content = "10 / 2", IsCorrect = false, OrderIndex = 3 },
+                        new() { OptionId = 4, Content = "\"5\" - 1", IsCorrect = false, OrderIndex = 4 },
+                    },
+                },
+            };
+
+            var existingLessonQuizLessonIds = await db.Quizzes
+                .Where(q => q.QuizType == QuizType.Lesson && !q.IsDeleted)
+                .Select(q => q.LessonId!.Value)
+                .ToListAsync();
+
+            var existingCourseTestCourseIds = await db.Quizzes
+                .Where(q => q.QuizType == QuizType.CourseTest && !q.IsDeleted)
+                .Select(q => q.CourseId)
+                .ToListAsync();
+
+            foreach (var course in courses)
+            {
+                var lessons = course.Lessons.Where(l => !l.IsDeleted).OrderBy(l => l.OrderIndex).ToList();
+
+                foreach (var lesson in lessons)
+                {
+                    if (existingLessonQuizLessonIds.Contains(lesson.Id)) continue;
+
+                    db.Quizzes.Add(new Quiz
+                    {
+                        QuizType = QuizType.Lesson,
+                        LessonId = lesson.Id,
+                        CourseId = course.Id,
+                        Title = $"Kiểm tra: {lesson.Title}",
+                        PassPercentage = 70,
+                        TimeLimitMinutes = 5,
+                        Questions = CloneQuestions(sampleQuestions),
+                    });
+                }
+
+                if (lessons.Count == 0 || existingCourseTestCourseIds.Contains(course.Id)) continue;
+
+                db.Quizzes.Add(new Quiz
+                {
+                    QuizType = QuizType.CourseTest,
+                    LessonId = null,
+                    CourseId = course.Id,
+                    Title = $"Bài test tổng kết khóa: {course.Title}",
+                    PassPercentage = 70,
+                    TimeLimitMinutes = 45,
+                    Questions = CloneQuestions(sampleQuestions),
+                });
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        private static List<QuizQuestion> CloneQuestions(List<QuizQuestion> source) =>
+            source.Select(q => new QuizQuestion
+            {
+                Content = q.Content,
+                OrderIndex = q.OrderIndex,
+                Points = q.Points,
+                Options = q.Options.Select(o => new QuizOptionItem
+                {
+                    OptionId = o.OptionId,
+                    Content = o.Content,
+                    IsCorrect = o.IsCorrect,
+                    OrderIndex = o.OrderIndex,
+                }).ToList(),
+            }).ToList();
     }
 }

@@ -13,6 +13,9 @@ public class Course : BaseEntity<long>, IAuditable, IUserTracking
     public bool IsFeatured { get; set; } = false;
     public double Rating { get; set; } = 0;
 
+    /// <summary>Cached count of active reviews (kept in sync via ReviewExtensions.RefreshReviewStatsAsync).</summary>
+    public int ReviewCount { get; set; }
+
     /// <summary>Short tagline shown on course cards. Optional.</summary>
     public string? Subtitle { get; set; }
 

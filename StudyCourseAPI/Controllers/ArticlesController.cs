@@ -8,7 +8,7 @@ using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
 using StudyCourseAPI.Services;
 
-namespace StudyCourseAPI.Controllers.AdminController;
+namespace StudyCourseAPI.Controllers;
 
 [Route("api/[controller]")]
 [Authorize]
@@ -111,17 +111,16 @@ public class ArticlesController : BaseController<Article>
     }
 
     // ── POST — any authenticated user ─────────────────────────────────────────
-    [AllowAnonymous]
     [HttpPost]
     public async Task<IActionResult> Post([FromBody] ArticleRequest model)
     {
         if (string.IsNullOrWhiteSpace(model.Title))
-            return BadRequest(new { message = "Title is required." });
+            return BadRequest(new { status = 400, message = "Title is required." });
         if (string.IsNullOrWhiteSpace(model.Slug))
-            return BadRequest(new { message = "Slug is required." });
+            return BadRequest(new { status = 400, message = "Slug is required." });
 
         if (await _baseRepository.Query().AnyAsync(a => a.Slug == model.Slug && !a.IsDeleted))
-            return BadRequest(new { message = "Slug already exists." });
+            return BadRequest(new { status = 400, message = "Slug already exists." });
 
         var currentUserEmail = _currentUser.GetCurrentUser()?.Email;
 
@@ -171,7 +170,7 @@ public class ArticlesController : BaseController<Article>
             return Forbid();
 
         if (await _baseRepository.Query().AnyAsync(a => a.Slug == model.Slug && a.Id != id && !a.IsDeleted))
-            return BadRequest(new { message = "Slug already exists." });
+            return BadRequest(new { status = 400, message = "Slug already exists." });
 
         entity.Title           = model.Title.Trim();
         entity.Slug            = model.Slug.Trim().ToLower();

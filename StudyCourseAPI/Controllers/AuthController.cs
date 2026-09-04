@@ -6,7 +6,7 @@ using StudyCourseAPI.Services;
 using StudyCourseAPI.Services;
 using StudyCourseAPI.Services.Auth;
 
-namespace StudyCourseAPI.Controllers.Auth
+namespace StudyCourseAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
@@ -24,7 +24,7 @@ namespace StudyCourseAPI.Controllers.Auth
         {
             var result = await _authService.RegisterAsync(request);
             return result.Succeeded
-                ? Ok("Register success. Please check your email to verify your account.")
+                ? Ok()
                 : BadRequest(result.Errors.Select(e => e.Description));
         }
 
@@ -41,7 +41,7 @@ namespace StudyCourseAPI.Controllers.Auth
         public async Task<IActionResult> VerifyEmail([FromQuery] string email, [FromQuery] string token)
         {
             var result = await _authService.ConfirmEmailAsync(email, token);
-            return result.Succeeded ? Ok("Email verified") : BadRequest(result.Errors.Select(e => e.Description));
+            return result.Succeeded ? Ok() : BadRequest(result.Errors.Select(e => e.Description));
         }
 
         [HttpPost("forgot-password")]

@@ -80,9 +80,7 @@ namespace StudyCourseAPI.Extensions
                 CourseId = courseId,
                 ChapterId = model.ChapterId,
                 IsPreview = model.IsPreview ?? false,
-                IsActive = model.IsActive,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                IsActive = model.IsActive
             };
         }
 
@@ -97,7 +95,6 @@ namespace StudyCourseAPI.Extensions
             if (model.ChapterId.HasValue) entity.ChapterId = model.ChapterId;
             if (model.IsPreview.HasValue) entity.IsPreview = model.IsPreview.Value;
             entity.IsActive = model.IsActive;
-            entity.UpdatedAt = DateTime.UtcNow;
         }
 
         /// <summary>
@@ -130,7 +127,6 @@ namespace StudyCourseAPI.Extensions
             course.LessonCount = lessonStats?.Count ?? 0;
             course.TotalDurationSeconds = lessonStats?.TotalDuration ?? 0;
             course.ChapterCount = chapterCount;
-            course.UpdatedAt = DateTime.UtcNow;
         }
 
         /// <summary>Compute next available OrderIndex for a course (or for a chapter if specified).</summary>

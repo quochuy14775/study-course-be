@@ -11,13 +11,12 @@ using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
 using StudyCourseAPI.Services;
 
-namespace StudyCourseAPI.Controllers.AdminController
+namespace StudyCourseAPI.Controllers
 {
     [Route("api/[controller]")]
     [Authorize]
     public class CoursesController : BaseController<Course>
     {
-        private readonly IRepository<Course> _courseRepository;
         private readonly IRepository<CourseTag> _courseTagRepository;
         private readonly IRepository<Tag> _tagRepository;
         private readonly IRepository<CourseLanguage> _courseLanguageRepository;
@@ -29,7 +28,6 @@ namespace StudyCourseAPI.Controllers.AdminController
         public CoursesController(
             IRepository<Course> baseRepository,
             ICurrentUser currentUser,
-            IRepository<Course> courseRepository,
             IRepository<CourseTag> courseTagRepository,
             IRepository<Tag> tagRepository,
             IRepository<CourseLanguage> courseLanguageRepository,
@@ -39,7 +37,6 @@ namespace StudyCourseAPI.Controllers.AdminController
             INotificationService notifier)
             : base(baseRepository, currentUser)
         {
-            _courseRepository = courseRepository;
             _courseTagRepository = courseTagRepository;
             _tagRepository = tagRepository;
             _courseLanguageRepository = courseLanguageRepository;
@@ -58,7 +55,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         [HttpGet]
         public async Task<IActionResult> Get(ODataQueryOptions<Course> queryOptions)
         {
-            var queryable = _courseRepository.Query()
+            var queryable = _baseRepository.Query()
                 .Where(x => !x.IsDeleted && x.IsActive)
                 .Include(c => c.CourseLanguages).ThenInclude(cl => cl.Language)
                 .Include(c => c.CourseFrameworks).ThenInclude(cf => cf.Framework)
@@ -80,7 +77,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(long id)
         {
-            var course = await _courseRepository.Query()
+            var course = await _baseRepository.Query()
                 .AsNoTracking()
                 .Include(c => c.CourseTags)
                 .Include(c => c.CourseLanguages).ThenInclude(cl => cl.Language)
@@ -101,7 +98,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         {
             var (success, errors) = await model.ValidateCourseAsync(_baseRepository);
             if (!success)
-                return BadRequest(new { status = 400, message = "Validation failed", errors = FlattenErrors(errors) });
+                return this.ValidationFailed(errors);
 
             var entity = model.GetCourse();
             _baseRepository.Add(entity);
@@ -111,19 +108,16 @@ namespace StudyCourseAPI.Controllers.AdminController
             if (model.TagIds != null && model.TagIds.Any())
             {
                 await entity.SyncTagsAsync(_courseTagRepository, _tagRepository, model.TagIds);
-                await _courseTagRepository.SaveChangesAsync();
             }
 
             if (model.LanguageIds != null)
             {
                 await entity.SyncLanguagesAsync(_courseLanguageRepository, _languageRepository, model.LanguageIds);
-                await _courseLanguageRepository.SaveChangesAsync();
             }
 
             if (model.FrameworkIds != null)
             {
                 await entity.SyncFrameworksAsync(_courseFrameworkRepository, _frameworkRepository, model.FrameworkIds);
-                await _courseFrameworkRepository.SaveChangesAsync();
             }
 
             // Broadcast new-course notification to all users
@@ -151,7 +145,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         [HttpPut("{id}")]
         public async Task<IActionResult> Put(long id, [FromBody] CourseRequest model)
         {
-            var entity = await _courseRepository.Query()
+            var entity = await _baseRepository.Query()
                 .Include(c => c.CourseTags)
                 .Include(c => c.CourseLanguages)
                 .Include(c => c.CourseFrameworks)
@@ -161,61 +155,25 @@ namespace StudyCourseAPI.Controllers.AdminController
 
             var (success, errors) = await model.ValidateCourseAsync(_baseRepository, id);
             if (!success)
-                return BadRequest(new { status = 400, message = "Validation failed", errors = FlattenErrors(errors) });
+                return this.ValidationFailed(errors);
 
-            var modelProps = model.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-            var entityType = entity.GetType();
-            foreach (var p in modelProps)
-            {
-                var target = entityType.GetProperty(p.Name);
-                if (target == null) continue;
-                if (!target.CanWrite) continue;
-
-                var value = p.GetValue(model);
-                if (value == null) continue; // don't overwrite with null
-
-                // Skip identity / audit fields
-                if (string.Equals(p.Name, "Id", System.StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(p.Name, "CreatedAt", System.StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(p.Name, "UpdatedAt", System.StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (target.PropertyType.IsAssignableFrom(p.PropertyType))
-                {
-                    target.SetValue(entity, value);
-                }
-                else
-                {
-                    try
-                    {
-                        var converted = System.Convert.ChangeType(value, target.PropertyType);
-                        target.SetValue(entity, converted);
-                    }
-                    catch
-                    {
-                        // ignore incompatible types
-                    }
-                }
-            }
+            model.ToEntity(entity);
             await _baseRepository.SaveChangesAsync();
 
             // Sync tags
             if (model.TagIds != null)
             {
                 await entity.SyncTagsAsync(_courseTagRepository, _tagRepository, model.TagIds);
-                await _courseTagRepository.SaveChangesAsync();
             }
 
             if (model.LanguageIds != null)
             {
                 await entity.SyncLanguagesAsync(_courseLanguageRepository, _languageRepository, model.LanguageIds);
-                await _courseLanguageRepository.SaveChangesAsync();
             }
 
             if (model.FrameworkIds != null)
             {
                 await entity.SyncFrameworksAsync(_courseFrameworkRepository, _frameworkRepository, model.FrameworkIds);
-                await _courseFrameworkRepository.SaveChangesAsync();
             }
 
             return Ok(new
@@ -269,6 +227,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         // ─────────────────────────────────────────────────────────
         // PUT /enable — bulk
         // ─────────────────────────────────────────────────────────
+        [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("enable")]
         public async Task<IActionResult> Enable([FromBody] List<long> ids)
         {
@@ -303,21 +262,6 @@ namespace StudyCourseAPI.Controllers.AdminController
                 .ToListAsync();
 
             return Ok(courses);
-        }
-
-        // ─────────────────────────────────────────────────────────
-        // helpers
-        // ─────────────────────────────────────────────────────────
-        private static Dictionary<string, object> FlattenErrors(Dictionary<string, List<string>>? errors)
-        {
-            var result = new Dictionary<string, object>();
-            if (errors == null) return result;
-            foreach (var kv in errors)
-            {
-                if (kv.Value == null || kv.Value.Count == 0) continue;
-                result[kv.Key] = kv.Value.Count == 1 ? kv.Value[0] : (object)kv.Value;
-            }
-            return result;
         }
     }
 }

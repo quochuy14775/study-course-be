@@ -7,7 +7,7 @@ using StudyCourseAPI.Extensions;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
 
-namespace StudyCourseAPI.Controllers.UserController
+namespace StudyCourseAPI.Controllers
 {
     [Route("api/lessons/{lessonId:long}/notes")]
     [ApiController]
@@ -50,7 +50,7 @@ namespace StudyCourseAPI.Controllers.UserController
 
             var (success, errors) = model.ValidateNote();
             if (!success)
-                return BadRequest(new { status = 400, message = "Validation failed", errors = FlattenErrors(errors) });
+                return this.ValidationFailed(errors);
 
             var userId = _currentUser.GetCurrentUserId();
             var entity = model.GetNote(lessonId, userId);
@@ -73,7 +73,7 @@ namespace StudyCourseAPI.Controllers.UserController
 
             var (success, errors) = model.ValidateNote();
             if (!success)
-                return BadRequest(new { status = 400, message = "Validation failed", errors = FlattenErrors(errors) });
+                return this.ValidationFailed(errors);
 
             model.MapTo(entity);
             await _baseRepository.SaveChangesAsync();
@@ -92,22 +92,9 @@ namespace StudyCourseAPI.Controllers.UserController
             if (entity == null) return NotFound();
 
             entity.IsDeleted = true;
-            entity.UpdatedAt = DateTime.UtcNow;
             await _baseRepository.SaveChangesAsync();
 
             return Ok(new { success = true });
-        }
-
-        private static Dictionary<string, object> FlattenErrors(Dictionary<string, List<string>>? errors)
-        {
-            var result = new Dictionary<string, object>();
-            if (errors == null) return result;
-            foreach (var kv in errors)
-            {
-                if (kv.Value == null || kv.Value.Count == 0) continue;
-                result[kv.Key] = kv.Value.Count == 1 ? kv.Value[0] : (object)kv.Value;
-            }
-            return result;
         }
     }
 }

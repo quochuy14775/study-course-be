@@ -12,6 +12,8 @@ public class UserCourse : IAuditable
     // Business fields
     public DateTime EnrolledAt { get; set; }
     public double Progress { get; set; } // 0 → 100
+    public bool IsCompleted { get; set; }
+    public DateTime? CompletedAt { get; set; }
 
     // Audit
     public DateTime CreatedAt { get; set; }

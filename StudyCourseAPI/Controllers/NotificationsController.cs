@@ -5,7 +5,7 @@ using StudyCourseAPI.DTOs.Responses.User;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
 
-namespace StudyCourseAPI.Controllers.UserController;
+namespace StudyCourseAPI.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]

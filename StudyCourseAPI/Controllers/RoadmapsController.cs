@@ -9,13 +9,12 @@ using StudyCourseAPI.Extensions;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
 
-namespace StudyCourseAPI.Controllers.AdminController;
+namespace StudyCourseAPI.Controllers;
 
 [Route("api/[controller]")]
 [Authorize]
 public class RoadmapsController : BaseController<Roadmap>
 {
-    private readonly IRepository<Roadmap> _roadmapRepository;
     private readonly IRepository<RoadmapCourse> _roadmapCourseRepository;
     private readonly IRepository<Course> _courseRepository;
 
@@ -26,7 +25,6 @@ public class RoadmapsController : BaseController<Roadmap>
         IRepository<Course> courseRepository)
         : base(baseRepository, currentUser)
     {
-        _roadmapRepository = baseRepository;
         _roadmapCourseRepository = roadmapCourseRepository;
         _courseRepository = courseRepository;
     }
@@ -37,7 +35,7 @@ public class RoadmapsController : BaseController<Roadmap>
     [HttpGet]
     public async Task<IActionResult> Get(ODataQueryOptions<Roadmap> queryOptions)
     {
-        var queryable = _roadmapRepository.Query()
+        var queryable = _baseRepository.Query()
             .Where(r => !r.IsDeleted && r.IsActive)
             .Include(r => r.RoadmapCourses)
                 .ThenInclude(rc => rc.Course)
@@ -59,7 +57,7 @@ public class RoadmapsController : BaseController<Roadmap>
     [HttpGet("{id}")]
     public async Task<IActionResult> Get(long id)
     {
-        var roadmap = await _roadmapRepository.Query()
+        var roadmap = await _baseRepository.Query()
             .AsNoTracking()
             .Include(r => r.RoadmapCourses)
                 .ThenInclude(rc => rc.Course)
@@ -74,23 +72,23 @@ public class RoadmapsController : BaseController<Roadmap>
     // ─────────────────────────────────────────────────────────
     // POST
     // ─────────────────────────────────────────────────────────
-    
+    [Authorize(Roles = AppRoles.Admin)]
     [HttpPost]
     public async Task<IActionResult> Post([FromBody] RoadmapRequest model)
     {
-        var (success, errors) = await model.ValidateRoadmapAsync(_roadmapRepository);
+        var (success, errors) = await model.ValidateRoadmapAsync(_baseRepository);
         if (!success)
-            return BadRequest(new { status = 400, message = "Validation failed", errors = FlattenErrors(errors) });
+            return this.ValidationFailed(errors);
 
         var entity = model.GetRoadmap();
-        _roadmapRepository.Add(entity);
-        await _roadmapRepository.SaveChangesAsync();
+        _baseRepository.Add(entity);
+        await _baseRepository.SaveChangesAsync();
 
         await entity.SyncCoursesAsync(_roadmapCourseRepository, _courseRepository, model.CourseIds);
         await _roadmapCourseRepository.SaveChangesAsync();
 
         // Reload with includes for response
-        var created = await _roadmapRepository.Query()
+        var created = await _baseRepository.Query()
             .Include(r => r.RoadmapCourses)
                 .ThenInclude(rc => rc.Course)
                     .ThenInclude(c => c.Chapters)
@@ -109,26 +107,25 @@ public class RoadmapsController : BaseController<Roadmap>
     [HttpPut("{id}")]
     public async Task<IActionResult> Put(long id, [FromBody] RoadmapRequest model)
     {
-        var entity = await _roadmapRepository.Query()
+        var entity = await _baseRepository.Query()
             .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted);
 
         if (entity == null) return NotFound();
 
-        var (success, errors) = await model.ValidateRoadmapAsync(_roadmapRepository, id);
+        var (success, errors) = await model.ValidateRoadmapAsync(_baseRepository, id);
         if (!success)
-            return BadRequest(new { status = 400, message = "Validation failed", errors = FlattenErrors(errors) });
+            return this.ValidationFailed(errors);
 
         entity.Title = model.Title.Trim();
         entity.Description = model.Description?.Trim();
         entity.IsActive = model.IsActive;
-        entity.UpdatedAt = DateTime.UtcNow;
 
-        await _roadmapRepository.SaveChangesAsync();
+        await _baseRepository.SaveChangesAsync();
 
         await entity.SyncCoursesAsync(_roadmapCourseRepository, _courseRepository, model.CourseIds);
         await _roadmapCourseRepository.SaveChangesAsync();
 
-        var updated = await _roadmapRepository.Query()
+        var updated = await _baseRepository.Query()
             .Include(r => r.RoadmapCourses)
                 .ThenInclude(rc => rc.Course)
                     .ThenInclude(c => c.Chapters)
@@ -148,7 +145,7 @@ public class RoadmapsController : BaseController<Roadmap>
             return BadRequest(new { status = 400, message = "Provide at least one roadmap id." });
 
         var now = DateTime.UtcNow;
-        var affected = await _roadmapRepository.Query()
+        var affected = await _baseRepository.Query()
             .Where(r => ids.Contains(r.Id) && !r.IsDeleted)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(r => r.IsDeleted, true)
@@ -166,7 +163,7 @@ public class RoadmapsController : BaseController<Roadmap>
     public async Task<IActionResult> Disable([FromBody] List<long> ids)
     {
         var now = DateTime.UtcNow;
-        var affected = await _roadmapRepository.Query()
+        var affected = await _baseRepository.Query()
             .Where(r => ids.Contains(r.Id) && !r.IsDeleted)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(r => r.IsActive, false)
@@ -178,28 +175,17 @@ public class RoadmapsController : BaseController<Roadmap>
     // ─────────────────────────────────────────────────────────
     // PUT /enable — bulk
     // ─────────────────────────────────────────────────────────
+    [Authorize(Roles = AppRoles.Admin)]
     [HttpPut("enable")]
     public async Task<IActionResult> Enable([FromBody] List<long> ids)
     {
         var now = DateTime.UtcNow;
-        var affected = await _roadmapRepository.Query()
+        var affected = await _baseRepository.Query()
             .Where(r => ids.Contains(r.Id) && !r.IsDeleted)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(r => r.IsActive, true)
                 .SetProperty(r => r.UpdatedAt, now));
 
         return affected == 0 ? NotFound() : NoContent();
-    }
-
-    private static Dictionary<string, object> FlattenErrors(Dictionary<string, List<string>>? errors)
-    {
-        var result = new Dictionary<string, object>();
-        if (errors == null) return result;
-        foreach (var kv in errors)
-        {
-            if (kv.Value == null || kv.Value.Count == 0) continue;
-            result[kv.Key] = kv.Value.Count == 1 ? kv.Value[0] : (object)kv.Value;
-        }
-        return result;
     }
 }

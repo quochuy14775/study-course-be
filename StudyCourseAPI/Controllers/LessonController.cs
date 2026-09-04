@@ -9,25 +9,22 @@ using StudyCourseAPI.Extensions;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
 
-namespace StudyCourseAPI.Controllers.AdminController
+namespace StudyCourseAPI.Controllers
 {
     [Route("api/Courses/{courseId}/[controller]")]
     [Authorize]
     public class LessonsController : BaseController<Lesson>
     {
-        private readonly IRepository<Lesson> _lessonRepository;
         private readonly IRepository<Course> _courseRepository;
         private readonly IRepository<Chapter> _chapterRepository;
 
         public LessonsController(
             IRepository<Lesson> baseRepository,
             ICurrentUser currentUser,
-            IRepository<Lesson> lessonRepository,
             IRepository<Course> courseRepository,
             IRepository<Chapter> chapterRepository)
             : base(baseRepository, currentUser)
         {
-            _lessonRepository = lessonRepository;
             _courseRepository = courseRepository;
             _chapterRepository = chapterRepository;
         }
@@ -38,7 +35,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         [HttpGet]
         public async Task<IActionResult> Get(long courseId, [FromQuery] long? chapterId, ODataQueryOptions<Lesson> queryOptions)
         {
-            var queryable = _lessonRepository.Query()
+            var queryable = _baseRepository.Query()
                 .Where(x => !x.IsDeleted && x.CourseId == courseId);
 
             if (chapterId.HasValue)
@@ -61,7 +58,7 @@ namespace StudyCourseAPI.Controllers.AdminController
         {
             // Skip the separate course existence query — use a single lesson query.
             // If lesson exists and belongs to course, course implicitly exists.
-            var lesson = await _lessonRepository.Query()
+            var lesson = await _baseRepository.Query()
                 .AsNoTracking()
                 .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted && l.CourseId == courseId);
 
@@ -97,8 +94,7 @@ namespace StudyCourseAPI.Controllers.AdminController
                     Description = request.NewChapter.Description,
                     OrderIndex = request.NewChapter.OrderIndex,
                     CourseId = courseId,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    IsActive = true
                 };
 
                 _chapterRepository.Add(chapter);
@@ -125,7 +121,7 @@ namespace StudyCourseAPI.Controllers.AdminController
             for (var i = 0; i < request.Lessons.Count; i++)
             {
                 var (success, errors) = await request.Lessons[i].ValidateLessonAsync(
-                    _lessonRepository, _chapterRepository, courseId);
+                    _baseRepository, _chapterRepository, courseId);
 
                 if (!success && errors != null)
                 {
@@ -143,7 +139,7 @@ namespace StudyCourseAPI.Controllers.AdminController
 
             // Build entities with safe orderIndex (auto-fill if 0 + collision)
             var entities = new List<Lesson>();
-            var nextIdx = await _lessonRepository.NextOrderIndexAsync(courseId);
+            var nextIdx = await _baseRepository.NextOrderIndexAsync(courseId);
 
             foreach (var model in request.Lessons)
             {
@@ -157,7 +153,7 @@ namespace StudyCourseAPI.Controllers.AdminController
             await _baseRepository.SaveChangesAsync();
 
             // Refresh cached stats on Course
-            await _courseRepository.RefreshCourseStatsAsync(_lessonRepository, _chapterRepository, courseId);
+            await _courseRepository.RefreshCourseStatsAsync(_baseRepository, _chapterRepository, courseId);
             await _courseRepository.SaveChangesAsync();
 
             var data = entities.Select(e => new LessonResponse(e)).ToList();
@@ -189,15 +185,15 @@ namespace StudyCourseAPI.Controllers.AdminController
 
 
             var (success, errors) = await model.ValidateLessonAsync(
-                _lessonRepository, _chapterRepository, courseId, id);
+                _baseRepository, _chapterRepository, courseId, id);
 
             if (!success)
-                return BadRequest(new { status = 400, message = "Validation failed", errors = FlattenErrors(errors) });
+                return this.ValidationFailed(errors);
 
             model.ToEntity(entity);
             await _baseRepository.SaveChangesAsync();
 
-            await _courseRepository.RefreshCourseStatsAsync(_lessonRepository, _chapterRepository, courseId);
+            await _courseRepository.RefreshCourseStatsAsync(_baseRepository, _chapterRepository, courseId);
             await _courseRepository.SaveChangesAsync();
 
             return Ok(new
@@ -228,7 +224,7 @@ namespace StudyCourseAPI.Controllers.AdminController
 
             if (affected == 0) return NotFound();
 
-            await _courseRepository.RefreshCourseStatsAsync(_lessonRepository, _chapterRepository, courseId);
+            await _courseRepository.RefreshCourseStatsAsync(_baseRepository, _chapterRepository, courseId);
             await _courseRepository.SaveChangesAsync();
 
             return Ok(new { success = true, deleted = affected });
@@ -310,27 +306,10 @@ namespace StudyCourseAPI.Controllers.AdminController
                 if (!byId.TryGetValue(item.Id, out var lesson)) continue;
                 lesson.OrderIndex = item.OrderIndex;
                 lesson.ChapterId = item.ChapterId;
-                lesson.UpdatedAt = DateTime.UtcNow;
             }
 
             await _baseRepository.SaveChangesAsync();
             return Ok(new { success = true, updated = lessons.Count });
-        }
-
-        // ─────────────────────────────────────────────────────────
-        // helpers
-        // ─────────────────────────────────────────────────────────
-        private static Dictionary<string, object> FlattenErrors(Dictionary<string, List<string>>? errors)
-        {
-            var result = new Dictionary<string, object>();
-            if (errors == null) return result;
-
-            foreach (var kv in errors)
-            {
-                if (kv.Value == null || kv.Value.Count == 0) continue;
-                result[kv.Key] = kv.Value.Count == 1 ? kv.Value[0] : (object)kv.Value;
-            }
-            return result;
         }
     }
 }

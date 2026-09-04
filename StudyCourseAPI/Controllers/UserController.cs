@@ -3,10 +3,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using StudyCourseAPI.DTOs.Requests.User;
 using StudyCourseAPI.DTOs.Responses.User;
+using StudyCourseAPI.Extensions;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
 
-namespace StudyCourseAPI.Controllers.UserController;
+namespace StudyCourseAPI.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -29,15 +30,7 @@ public class UserController : ControllerBase
         if (user is null) return Unauthorized();
 
         var roles = await _userManager.GetRolesAsync(user);
-
-        return Ok(new UserProfileResponse
-        {
-            Email     = user.Email!,
-            UserName  = user.UserName!,
-            FullName  = user.FullName,
-            AvatarUrl = user.AvatarUrl,
-            Role      = roles.FirstOrDefault(),
-        });
+        return Ok(UserProfileResponse.UserProfile(user, roles));
     }
 
     [HttpPut("me")]
@@ -46,23 +39,14 @@ public class UserController : ControllerBase
         var user = _currentUser.GetCurrentUser();
         if (user is null) return Unauthorized();
 
-        user.FullName  = request.FullName.Trim();
-        user.AvatarUrl = string.IsNullOrWhiteSpace(request.AvatarUrl) ? null : request.AvatarUrl.Trim();
-        user.UpdatedAt = DateTime.UtcNow;
+        request.MapTo(user);
 
         var result = await _userManager.UpdateAsync(user);
         if (!result.Succeeded)
             return BadRequest(result.Errors.Select(e => e.Description));
 
         var roles = await _userManager.GetRolesAsync(user);
-        return Ok(new UserProfileResponse
-        {
-            Email     = user.Email!,
-            UserName  = user.UserName!,
-            FullName  = user.FullName,
-            AvatarUrl = user.AvatarUrl,
-            Role      = roles.FirstOrDefault(),
-        });
+        return Ok(UserProfileResponse.UserProfile(user, roles));
     }
 
     [HttpPut("change-password")]
@@ -75,6 +59,6 @@ public class UserController : ControllerBase
         if (!result.Succeeded)
             return BadRequest(result.Errors.Select(e => e.Description));
 
-        return Ok("Đổi mật khẩu thành công.");
+        return Ok();
     }
 }

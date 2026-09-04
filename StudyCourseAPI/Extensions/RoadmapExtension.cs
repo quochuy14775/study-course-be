@@ -52,8 +52,6 @@ public static class RoadmapExtensions
             Title = model.Title.Trim(),
             Description = model.Description?.Trim(),
             IsActive = model.IsActive,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
         };
     }
 

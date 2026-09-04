@@ -14,12 +14,18 @@ namespace StudyCourseAPI.Controllers;
 public class AiController : ControllerBase
 {
     private readonly IGroqService _groqService;
+    private readonly IAiResponseParser _parser;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<AiController> _logger;
 
-    public AiController(IGroqService groqService, ICurrentUser currentUser, ILogger<AiController> logger)
+    public AiController(
+        IGroqService groqService,
+        IAiResponseParser parser,
+        ICurrentUser currentUser,
+        ILogger<AiController> logger)
     {
         _groqService = groqService;
+        _parser = parser;
         _currentUser = currentUser;
         _logger = logger;
     }
@@ -30,31 +36,21 @@ public class AiController : ControllerBase
     [HttpPost("prompt")]
     public async Task<ActionResult<AiResponseDto>> GenerateResponse([FromBody] AiPromptRequest request)
     {
-        try
+        if (string.IsNullOrWhiteSpace(request.Prompt))
+            return BadRequest(new { status = 400, message = "Prompt cannot be empty" });
+
+        var (response, promptTokens, completionTokens) = await _groqService.GenerateResponseWithTokensAsync(request.Prompt, request.SystemPrompt);
+
+        var result = new AiResponseDto
         {
-            if (string.IsNullOrWhiteSpace(request.Prompt))
-            {
-                return BadRequest(new { message = "Prompt cannot be empty" });
-            }
+            Response = response,
+            PromptTokens = promptTokens,
+            CompletionTokens = completionTokens,
+            GeneratedAt = DateTime.UtcNow
+        };
 
-            var (response, promptTokens, completionTokens) = await _groqService.GenerateResponseWithTokensAsync(request.Prompt, request.SystemPrompt);
-
-            var result = new AiResponseDto
-            {
-                Response = response,
-                PromptTokens = promptTokens,
-                CompletionTokens = completionTokens,
-                GeneratedAt = DateTime.UtcNow
-            };
-
-            _logger.LogInformation($"AI response generated for user {_currentUser.GetCurrentUserId()}");
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError($"Error generating AI response: {ex.Message}");
-            return StatusCode(500, new { message = "Error generating response", error = ex.Message });
-        }
+        _logger.LogInformation("AI response generated for user {UserId}", _currentUser.GetCurrentUserId());
+        return Ok(result);
     }
 
     /// <summary>
@@ -63,14 +59,10 @@ public class AiController : ControllerBase
     [HttpPost("lesson-explanation")]
     public async Task<ActionResult<LessonExplanationResponseDto>> GenerateLessonExplanation([FromBody] LessonExplanationRequest request)
     {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(request.LessonTitle) || string.IsNullOrWhiteSpace(request.LessonContent))
-            {
-                return BadRequest(new { message = "Lesson title and content are required" });
-            }
+        if (string.IsNullOrWhiteSpace(request.LessonTitle) || string.IsNullOrWhiteSpace(request.LessonContent))
+            return BadRequest(new { status = 400, message = "Lesson title and content are required" });
 
-            var prompt = $@"
+        var prompt = $@"
 Please provide a clear explanation for the following lesson:
 
 Lesson Title: {request.LessonTitle}
@@ -84,25 +76,19 @@ Please provide:
 4. Common misunderstandings
 ";
 
-            var response = await _groqService.GenerateResponseAsync(prompt, "You are an expert educator. Provide clear, easy-to-understand explanations for students.");
+        var response = await _groqService.GenerateResponseAsync(prompt, "You are an expert educator. Provide clear, easy-to-understand explanations for students.");
 
-            var result = new LessonExplanationResponseDto
-            {
-                Explanation = response,
-                KeyPoints = ExtractKeyPoints(response),
-                SummaryForStudents = ExtractSummary(response),
-                CommonMisunderstandings = ExtractMisunderstandings(response),
-                GeneratedAt = DateTime.UtcNow
-            };
-
-            _logger.LogInformation($"Lesson explanation generated for user {_currentUser.GetCurrentUserId()}");
-            return Ok(result);
-        }
-        catch (Exception ex)
+        var result = new LessonExplanationResponseDto
         {
-            _logger.LogError($"Error generating lesson explanation: {ex.Message}");
-            return StatusCode(500, new { message = "Error generating lesson explanation", error = ex.Message });
-        }
+            Explanation = response,
+            KeyPoints = _parser.ExtractKeyPoints(response),
+            SummaryForStudents = _parser.ExtractSummary(response),
+            CommonMisunderstandings = _parser.ExtractMisunderstandings(response),
+            GeneratedAt = DateTime.UtcNow
+        };
+
+        _logger.LogInformation("Lesson explanation generated for user {UserId}", _currentUser.GetCurrentUserId());
+        return Ok(result);
     }
 
     /// <summary>
@@ -111,15 +97,11 @@ Please provide:
     [HttpPost("generate-quiz")]
     public async Task<ActionResult<QuizGenerationResponseDto>> GenerateQuiz([FromBody] QuizGeneratorRequest request)
     {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(request.Topic) || request.NumberOfQuestions <= 0)
-            {
-                return BadRequest(new { message = "Valid topic and number of questions required" });
-            }
+        if (string.IsNullOrWhiteSpace(request.Topic) || request.NumberOfQuestions <= 0)
+            return BadRequest(new { status = 400, message = "Valid topic and number of questions required" });
 
-            var difficultyLevel = request.Difficulty?.ToLower() ?? "medium";
-            var prompt = $@"
+        var difficultyLevel = request.Difficulty?.ToLower() ?? "medium";
+        var prompt = $@"
 Generate {request.NumberOfQuestions} multiple-choice questions about {request.Topic} at {difficultyLevel} difficulty level.
 
 For each question, provide:
@@ -141,71 +123,66 @@ Format as JSON with this structure:
 }}
 ";
 
-            var response = await _groqService.GenerateResponseAsync(prompt, "You are an expert quiz generator. Create clear, fair quiz questions.");
+        var response = await _groqService.GenerateResponseAsync(prompt, "You are an expert quiz generator. Create clear, fair quiz questions.");
 
-            // Parse JSON response
-            var quizResponse = new QuizGenerationResponseDto
+        var quizResponse = new QuizGenerationResponseDto
+        {
+            Topic = request.Topic,
+            Difficulty = difficultyLevel switch
             {
-                Topic = request.Topic,
-                Difficulty = difficultyLevel switch
-                {
-                    "easy" => 1,
-                    "medium" => 2,
-                    "hard" => 3,
-                    _ => 2
-                },
-                GeneratedAt = DateTime.UtcNow
-            };
+                "easy" => 1,
+                "medium" => 2,
+                "hard" => 3,
+                _ => 2
+            },
+            GeneratedAt = DateTime.UtcNow
+        };
 
-            try
+        // The model doesn't always return clean JSON — tolerate malformed/partial output
+        // rather than failing the whole request over one bad question.
+        try
+        {
+            var jsonStart = response.IndexOf("{");
+            var jsonEnd = response.LastIndexOf("}");
+            if (jsonStart >= 0 && jsonEnd > jsonStart)
             {
-                var jsonStart = response.IndexOf("{");
-                var jsonEnd = response.LastIndexOf("}");
-                if (jsonStart >= 0 && jsonEnd > jsonStart)
-                {
-                    var jsonStr = response.Substring(jsonStart, jsonEnd - jsonStart + 1);
-                    using var doc = JsonDocument.Parse(jsonStr);
-                    var root = doc.RootElement;
+                var jsonStr = response.Substring(jsonStart, jsonEnd - jsonStart + 1);
+                using var doc = JsonDocument.Parse(jsonStr);
+                var root = doc.RootElement;
 
-                    if (root.TryGetProperty("questions", out var questionsElement))
+                if (root.TryGetProperty("questions", out var questionsElement))
+                {
+                    int questionNumber = 1;
+                    foreach (var q in questionsElement.EnumerateArray())
                     {
-                        int questionNumber = 1;
-                        foreach (var q in questionsElement.EnumerateArray())
+                        try
                         {
-                            try
+                            var question = new QuizQuestionDto
                             {
-                                var question = new QuizQuestionDto
-                                {
-                                    Number = questionNumber++,
-                                    Question = q.GetProperty("question").GetString() ?? "",
-                                    Options = q.GetProperty("options").EnumerateArray()
-                                        .Select(o => o.GetString() ?? "").ToList(),
-                                    CorrectAnswer = q.GetProperty("correct_answer").GetString() ?? "",
-                                    Explanation = q.TryGetProperty("explanation", out var exp) ? exp.GetString() : null
-                                };
-                                quizResponse.Questions.Add(question);
-                            }
-                            catch (Exception qEx)
-                            {
-                                _logger.LogWarning($"Error parsing quiz question: {qEx.Message}");
-                            }
+                                Number = questionNumber++,
+                                Question = q.GetProperty("question").GetString() ?? "",
+                                Options = q.GetProperty("options").EnumerateArray()
+                                    .Select(o => o.GetString() ?? "").ToList(),
+                                CorrectAnswer = q.GetProperty("correct_answer").GetString() ?? "",
+                                Explanation = q.TryGetProperty("explanation", out var exp) ? exp.GetString() : null
+                            };
+                            quizResponse.Questions.Add(question);
+                        }
+                        catch (Exception qEx)
+                        {
+                            _logger.LogWarning(qEx, "Error parsing quiz question");
                         }
                     }
                 }
             }
-            catch (Exception parseEx)
-            {
-                _logger.LogWarning($"Could not parse quiz JSON: {parseEx.Message}");
-            }
-
-            _logger.LogInformation($"Quiz generated for user {_currentUser.GetCurrentUserId()}");
-            return Ok(quizResponse);
         }
-        catch (Exception ex)
+        catch (Exception parseEx)
         {
-            _logger.LogError($"Error generating quiz: {ex.Message}");
-            return StatusCode(500, new { message = "Error generating quiz", error = ex.Message });
+            _logger.LogWarning(parseEx, "Could not parse quiz JSON");
         }
+
+        _logger.LogInformation("Quiz generated for user {UserId}", _currentUser.GetCurrentUserId());
+        return Ok(quizResponse);
     }
 
     /// <summary>
@@ -214,14 +191,10 @@ Format as JSON with this structure:
     [HttpPost("homework-assist")]
     public async Task<ActionResult<HomeworkAssistantResponseDto>> GetHomeworkAssistance([FromBody] HomeworkAssistantRequest request)
     {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(request.Question))
-            {
-                return BadRequest(new { message = "Question cannot be empty" });
-            }
+        if (string.IsNullOrWhiteSpace(request.Question))
+            return BadRequest(new { status = 400, message = "Question cannot be empty" });
 
-            var prompt = $@"
+        var prompt = $@"
 Help me with this question:
 {request.Question}
 
@@ -234,25 +207,19 @@ Please provide:
 4. Related concepts to study
 ";
 
-            var response = await _groqService.GenerateResponseAsync(prompt, "You are a helpful tutor. Guide students toward understanding without just giving answers.");
+        var response = await _groqService.GenerateResponseAsync(prompt, "You are a helpful tutor. Guide students toward understanding without just giving answers.");
 
-            var result = new HomeworkAssistantResponseDto
-            {
-                Solution = response,
-                StepByStepExplanation = ExtractSteps(response),
-                Hint = ExtractHint(response),
-                RelatedConcepts = ExtractConcepts(response),
-                GeneratedAt = DateTime.UtcNow
-            };
-
-            _logger.LogInformation($"Homework assistance provided to user {_currentUser.GetCurrentUserId()}");
-            return Ok(result);
-        }
-        catch (Exception ex)
+        var result = new HomeworkAssistantResponseDto
         {
-            _logger.LogError($"Error providing homework assistance: {ex.Message}");
-            return StatusCode(500, new { message = "Error providing assistance", error = ex.Message });
-        }
+            Solution = response,
+            StepByStepExplanation = _parser.ExtractSteps(response),
+            Hint = _parser.ExtractHint(response),
+            RelatedConcepts = _parser.ExtractConcepts(response),
+            GeneratedAt = DateTime.UtcNow
+        };
+
+        _logger.LogInformation("Homework assistance provided to user {UserId}", _currentUser.GetCurrentUserId());
+        return Ok(result);
     }
 
     /// <summary>
@@ -261,14 +228,10 @@ Please provide:
     [HttpPost("code-review")]
     public async Task<ActionResult<CodeReviewResponseDto>> ReviewCode([FromBody] CodeReviewRequest request)
     {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(request.Code))
-            {
-                return BadRequest(new { message = "Code cannot be empty" });
-            }
+        if (string.IsNullOrWhiteSpace(request.Code))
+            return BadRequest(new { status = 400, message = "Code cannot be empty" });
 
-            var prompt = $@"
+        var prompt = $@"
 Please review the following {request.Language} code:
 
 ```{request.Language}
@@ -283,112 +246,19 @@ Provide:
 5. Improved version of the code
 ";
 
-            var response = await _groqService.GenerateResponseAsync(prompt, "You are an expert code reviewer. Provide constructive feedback and improvements.");
+        var response = await _groqService.GenerateResponseAsync(prompt, "You are an expert code reviewer. Provide constructive feedback and improvements.");
 
-            var result = new CodeReviewResponseDto
-            {
-                OverallAssessment = response,
-                Issues = ExtractCodeIssues(response),
-                Suggestions = ExtractSuggestions(response),
-                BestPractices = ExtractBestPractices(response),
-                ImprovedCode = ExtractImprovedCode(response),
-                GeneratedAt = DateTime.UtcNow
-            };
-
-            _logger.LogInformation($"Code review completed for user {_currentUser.GetCurrentUserId()}");
-            return Ok(result);
-        }
-        catch (Exception ex)
+        var result = new CodeReviewResponseDto
         {
-            _logger.LogError($"Error reviewing code: {ex.Message}");
-            return StatusCode(500, new { message = "Error reviewing code", error = ex.Message });
-        }
-    }
-
-    #region Helper Methods
-
-    private List<string> ExtractKeyPoints(string text)
-    {
-        var lines = text.Split(new[] { "\n", "\r\n" }, StringSplitOptions.None);
-        return lines.Where(l => l.Contains("-") || l.Contains("•") || l.Contains("*"))
-            .Select(l => l.Trim(' ', '-', '•', '*').Trim())
-            .Where(l => !string.IsNullOrEmpty(l))
-            .Take(5)
-            .ToList();
-    }
-
-    private string ExtractSummary(string text)
-    {
-        var lines = text.Split(new[] { "\n", "\r\n" }, StringSplitOptions.None);
-        var summaryLines = lines.Skip(1).Take(3).ToList();
-        return string.Join(" ", summaryLines).Trim();
-    }
-
-    private string ExtractMisunderstandings(string text)
-    {
-        return text.Contains("misconception") || text.Contains("misunderstanding")
-            ? text.Substring(0, Math.Min(500, text.Length))
-            : "None identified";
-    }
-
-    private string ExtractSteps(string text)
-    {
-        return text.Contains("step") ? text : "Follow the solution above carefully";
-    }
-
-    private string ExtractHint(string text)
-    {
-        return "Consider breaking down the problem into smaller parts";
-    }
-
-    private List<string> ExtractConcepts(string text)
-    {
-        return new List<string> { "Review related topics in your course materials" };
-    }
-
-    private List<string> ExtractCodeIssues(string text)
-    {
-        var issues = new List<string>();
-        if (text.Contains("bug") || text.Contains("error")) issues.Add("Potential bugs found");
-        if (text.Contains("performance")) issues.Add("Performance concerns");
-        if (text.Contains("null")) issues.Add("Null reference handling");
-        return issues;
-    }
-
-    private List<string> ExtractSuggestions(string text)
-    {
-        return new List<string>
-        {
-            "Add more comments to explain complex logic",
-            "Consider using more descriptive variable names",
-            "Add error handling"
+            OverallAssessment = response,
+            Issues = _parser.ExtractCodeIssues(response),
+            Suggestions = _parser.ExtractSuggestions(response),
+            BestPractices = _parser.ExtractBestPractices(response),
+            ImprovedCode = _parser.ExtractImprovedCode(response),
+            GeneratedAt = DateTime.UtcNow
         };
-    }
 
-    private List<string> ExtractBestPractices(string text)
-    {
-        return new List<string>
-        {
-            "Follow SOLID principles",
-            "Write unit tests",
-            "Use consistent naming conventions"
-        };
+        _logger.LogInformation("Code review completed for user {UserId}", _currentUser.GetCurrentUserId());
+        return Ok(result);
     }
-
-    private string ExtractImprovedCode(string text)
-    {
-        var codeStart = text.IndexOf("```");
-        if (codeStart >= 0)
-        {
-            var codeEnd = text.IndexOf("```", codeStart + 3);
-            if (codeEnd > codeStart)
-            {
-                return text.Substring(codeStart + 3, codeEnd - codeStart - 3).Trim();
-            }
-        }
-        return "See review above for improvements";
-    }
-
-    #endregion
 }
-

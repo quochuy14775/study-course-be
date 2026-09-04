@@ -42,7 +42,6 @@ namespace StudyCourseAPI.Extensions
         {
             entity.Content = model.Content;
             entity.VideoTimestamp = model.VideoTimestamp;
-            entity.UpdatedAt = DateTime.UtcNow;
         }
     }
 }

@@ -9,7 +9,7 @@ using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
 using StudyCourseAPI.Services;
 
-namespace StudyCourseAPI.Controllers.UserController
+namespace StudyCourseAPI.Controllers
 {
     [Route("api/lessons/{lessonId:long}/questions")]
     [ApiController]
@@ -61,7 +61,7 @@ namespace StudyCourseAPI.Controllers.UserController
 
             var (success, errors) = model.ValidateQuestion();
             if (!success)
-                return BadRequest(new { status = 400, message = "Validation failed", errors = FlattenErrors(errors) });
+                return this.ValidationFailed(errors);
 
             var userId = _currentUser.GetCurrentUserId();
             var entity = model.GetQuestion(lessonId, userId);
@@ -88,7 +88,6 @@ namespace StudyCourseAPI.Controllers.UserController
             if (entity == null) return NotFound();
 
             entity.IsDeleted = true;
-            entity.UpdatedAt = DateTime.UtcNow;
             await _baseRepository.SaveChangesAsync();
 
             return Ok(new { success = true });
@@ -105,7 +104,6 @@ namespace StudyCourseAPI.Controllers.UserController
             if (entity == null) return NotFound();
 
             entity.IsResolved = !entity.IsResolved;
-            entity.UpdatedAt = DateTime.UtcNow;
             await _baseRepository.SaveChangesAsync();
 
             return Ok(new { isResolved = entity.IsResolved });
@@ -121,7 +119,7 @@ namespace StudyCourseAPI.Controllers.UserController
 
             var (success, errors) = model.ValidateAnswer();
             if (!success)
-                return BadRequest(new { status = 400, message = "Validation failed", errors = FlattenErrors(errors) });
+                return this.ValidationFailed(errors);
 
             var userId = _currentUser.GetCurrentUserId();
             var entity = model.GetAnswer(questionId, userId);
@@ -147,18 +145,6 @@ namespace StudyCourseAPI.Controllers.UserController
                 actorId: userId);
 
             return CreatedAtAction(nameof(GetAll), new { lessonId }, new AnswerResponse(created!, userId));
-        }
-
-        private static Dictionary<string, object> FlattenErrors(Dictionary<string, List<string>>? errors)
-        {
-            var result = new Dictionary<string, object>();
-            if (errors == null) return result;
-            foreach (var kv in errors)
-            {
-                if (kv.Value == null || kv.Value.Count == 0) continue;
-                result[kv.Key] = kv.Value.Count == 1 ? kv.Value[0] : (object)kv.Value;
-            }
-            return result;
         }
     }
 
@@ -242,7 +228,6 @@ namespace StudyCourseAPI.Controllers.UserController
             foreach (var s in siblings) s.IsAcceptedAnswer = false;
 
             entity.IsAcceptedAnswer = !entity.IsAcceptedAnswer;
-            entity.UpdatedAt = DateTime.UtcNow;
 
             if (entity.IsAcceptedAnswer)
                 entity.Question.IsResolved = true;
@@ -274,7 +259,6 @@ namespace StudyCourseAPI.Controllers.UserController
             if (entity == null) return NotFound();
 
             entity.IsDeleted = true;
-            entity.UpdatedAt = DateTime.UtcNow;
             entity.Question.AnswerCount = Math.Max(0, entity.Question.AnswerCount - 1);
             await _baseRepository.SaveChangesAsync();
 

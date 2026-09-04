@@ -47,64 +47,12 @@ namespace StudyCourseAPI.Repositories
 
         public void SaveChanges()
         {
-            AuditableEntities();
             Context.SaveChanges();
         }
 
         public Task SaveChangesAsync()
         {
-            AuditableEntities();
             return Context.SaveChangesAsync();
-        }
-
-        private void AuditableEntities()
-        {
-            //var currentUser = _currentUser.GetCurrentUser();
-            //var modifiedEntries = Context.ChangeTracker.Entries<IAuditable>()
-            //        .Where(x => (x.State == EntityState.Added || x.State == EntityState.Modified));
-
-            //foreach (var entity in modifiedEntries)
-            //{
-            //    switch (entity.State)
-            //    {
-            //        case EntityState.Added:
-            //            entity.Entity.CreatedBy = currentUser;
-            //            entity.Entity.CreatedOn = DateTime.UtcNow;
-            //            entity.Entity.LatestUpdatedOn = DateTime.UtcNow;
-            //            entity.Entity.LatestUpdatedBy = currentUser;
-            //            break;
-
-            //        case EntityState.Modified:
-            //            entity.Entity.LatestUpdatedOn = DateTime.UtcNow;
-            //            entity.Entity.LatestUpdatedBy = currentUser;
-            //            break;
-            //    }
-            //}
-
-            //foreach (var entry in Context.ChangeTracker.Entries<IBranchable>()
-            //    .Where(x => (x.State == EntityState.Added)))
-            //{
-            //    switch (entry.State)
-            //    {
-            //        case EntityState.Added:
-            //            entry.Entity.BranchId = currentUser.BranchId.Value;
-            //            break;
-            //    }
-            //}
-
-            //foreach (var entry in Context.ChangeTracker.Entries<IDeletable>()
-            //    .Where(x => (x.State == EntityState.Deleted)))
-            //{
-            //    switch (entry.State)
-            //    {
-            //        case EntityState.Deleted:
-            //            entry.Entity.IsDeleted = true;
-            //            entry.Entity.DeletedBy = currentUser;
-            //            entry.Entity.DeletedOn = DateTime.UtcNow;
-            //            entry.State = EntityState.Modified;
-            //            break;
-            //    }
-            //}
         }
 
         public IQueryable<T> Query()

@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using StudyCourseAPI.Configurations;
 using StudyCourseAPI.Data;
+using StudyCourseAPI.Middleware;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
 using StudyCourseAPI.Services;
@@ -23,14 +24,17 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 #region Dependency Injection (DI)
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddHttpClient();
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
-builder.Services.AddScoped<IJwtService, JwtService>();
+builder.Services.AddSingleton<IJwtService, JwtService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IGroqService, GroqService>();
+builder.Services.AddHttpClient<IGroqService, GroqService>();
+builder.Services.AddSingleton<IAiResponseParser, AiResponseParser>();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
-builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddSingleton<IEmailService, EmailService>();
 #endregion
 
 #region Identity
@@ -141,10 +145,13 @@ using (var scope = app.Services.CreateScope())
     await DbInitializer.SeedAdminAsync(userManager, roleManager, config);
     await DbInitializer.SeedUserAsync(userManager, roleManager, config);
     await DbInitializer.PatchEmailConfirmedAsync(userManager);
+    // await DbInitializer.SeedQuizzesAsync(db);
 }
 #endregion
 
 #region Middleware pipeline
+app.UseExceptionHandler();
+
 app.UseSwagger();
 app.UseSwaggerUI();
 

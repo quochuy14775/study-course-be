@@ -82,8 +82,6 @@ namespace StudyCourseAPI.Extensions
                 Level = model.Level,
                 IsFeatured = model.IsFeatured,
                 IsActive = model.IsActive,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
             };
         }
 
@@ -97,10 +95,9 @@ namespace StudyCourseAPI.Extensions
             entity.Level = model.Level;
             entity.IsFeatured = model.IsFeatured;
             entity.IsActive = model.IsActive;
-            entity.UpdatedAt = DateTime.UtcNow;
         }
 
-        public static async Task SyncLanguagesAsync(
+        public static Task SyncLanguagesAsync(
             this Course course,
             IRepository<CourseLanguage> courseLanguageRepository,
             IRepository<Language> languageRepository,
@@ -108,35 +105,25 @@ namespace StudyCourseAPI.Extensions
         {
             targetLanguageIds ??= new List<long>();
 
-            if (targetLanguageIds.Any())
-            {
-                var existingIds = await languageRepository.Query()
+            var currentTask = courseLanguageRepository.Query()
+                .Where(cl => cl.CourseId == course.Id)
+                .ToListAsync();
+
+            var validIdsTask = targetLanguageIds.Count == 0
+                ? Task.FromResult(new List<long>())
+                : languageRepository.Query()
                     .Where(l => targetLanguageIds.Contains(l.Id) && !l.IsDeleted)
                     .Select(l => l.Id)
                     .ToListAsync();
-                targetLanguageIds = existingIds;
-            }
 
-            var currentLinks = await courseLanguageRepository.Query()
-                .Where(cl => cl.CourseId == course.Id)
-                .ToListAsync();
-            var currentIds = currentLinks.Select(cl => cl.LanguageId).ToHashSet();
-            var targetIds = targetLanguageIds.ToHashSet();
-
-            foreach (var link in currentLinks)
-            {
-                if (!targetIds.Contains(link.LanguageId))
-                    await courseLanguageRepository.DeleteAsync(link);
-            }
-
-            foreach (var langId in targetIds)
-            {
-                if (!currentIds.Contains(langId))
-                    courseLanguageRepository.Add(new CourseLanguage { CourseId = course.Id, LanguageId = langId });
-            }
+            return courseLanguageRepository.SyncLinksAsync(
+                currentTask,
+                validIdsTask,
+                cl => cl.LanguageId,
+                langId => new CourseLanguage { CourseId = course.Id, LanguageId = langId });
         }
 
-        public static async Task SyncFrameworksAsync(
+        public static Task SyncFrameworksAsync(
             this Course course,
             IRepository<CourseFramework> courseFrameworkRepository,
             IRepository<Framework> frameworkRepository,
@@ -144,35 +131,25 @@ namespace StudyCourseAPI.Extensions
         {
             targetFrameworkIds ??= new List<long>();
 
-            if (targetFrameworkIds.Any())
-            {
-                var existingIds = await frameworkRepository.Query()
+            var currentTask = courseFrameworkRepository.Query()
+                .Where(cf => cf.CourseId == course.Id)
+                .ToListAsync();
+
+            var validIdsTask = targetFrameworkIds.Count == 0
+                ? Task.FromResult(new List<long>())
+                : frameworkRepository.Query()
                     .Where(f => targetFrameworkIds.Contains(f.Id) && !f.IsDeleted)
                     .Select(f => f.Id)
                     .ToListAsync();
-                targetFrameworkIds = existingIds;
-            }
 
-            var currentLinks = await courseFrameworkRepository.Query()
-                .Where(cf => cf.CourseId == course.Id)
-                .ToListAsync();
-            var currentIds = currentLinks.Select(cf => cf.FrameworkId).ToHashSet();
-            var targetIds = targetFrameworkIds.ToHashSet();
-
-            foreach (var link in currentLinks)
-            {
-                if (!targetIds.Contains(link.FrameworkId))
-                    await courseFrameworkRepository.DeleteAsync(link);
-            }
-
-            foreach (var fwId in targetIds)
-            {
-                if (!currentIds.Contains(fwId))
-                    courseFrameworkRepository.Add(new CourseFramework { CourseId = course.Id, FrameworkId = fwId });
-            }
+            return courseFrameworkRepository.SyncLinksAsync(
+                currentTask,
+                validIdsTask,
+                cf => cf.FrameworkId,
+                fwId => new CourseFramework { CourseId = course.Id, FrameworkId = fwId });
         }
 
-        public static async Task SyncTagsAsync(
+        public static Task SyncTagsAsync(
             this Course course,
             IRepository<CourseTag> courseTagRepository,
             IRepository<Tag> tagRepository,
@@ -180,35 +157,22 @@ namespace StudyCourseAPI.Extensions
         {
             targetTagIds ??= new List<long>();
 
-            // Validate provided tag ids exist
-            if (targetTagIds.Any())
-            {
-                var existingIds = await tagRepository.Query()
+            var currentTask = courseTagRepository.Query()
+                .Where(ct => ct.CourseId == course.Id)
+                .ToListAsync();
+
+            var validIdsTask = targetTagIds.Count == 0
+                ? Task.FromResult(new List<long>())
+                : tagRepository.Query()
                     .Where(t => targetTagIds.Contains(t.Id) && !t.IsDeleted)
                     .Select(t => t.Id)
                     .ToListAsync();
-                targetTagIds = existingIds;
-            }
 
-            var currentLinks = await courseTagRepository.Query()
-                .Where(ct => ct.CourseId == course.Id)
-                .ToListAsync();
-            var currentIds = currentLinks.Select(ct => ct.TagId).ToHashSet();
-            var targetIds = targetTagIds.ToHashSet();
-
-            // Remove links no longer in target
-            foreach (var link in currentLinks)
-            {
-                if (!targetIds.Contains(link.TagId))
-                    await courseTagRepository.DeleteAsync(link);
-            }
-
-            // Add new links
-            foreach (var tagId in targetIds)
-            {
-                if (!currentIds.Contains(tagId))
-                    courseTagRepository.Add(new CourseTag { CourseId = course.Id, TagId = tagId });
-            }
+            return courseTagRepository.SyncLinksAsync(
+                currentTask,
+                validIdsTask,
+                ct => ct.TagId,
+                tagId => new CourseTag { CourseId = course.Id, TagId = tagId });
         }
     }
 }

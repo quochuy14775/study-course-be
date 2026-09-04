@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using StudyCourseAPI.Enums;
 using StudyCourseAPI.Models;
 
@@ -51,6 +53,19 @@ public class ApplicationDbContext
     public DbSet<QuestionAnswer> QuestionAnswers => Set<QuestionAnswer>();
     public DbSet<AnswerLike> AnswerLikes => Set<AnswerLike>();
 
+    // Quiz (lesson quizzes + course tests share one table via QuizType)
+    public DbSet<Quiz> Quizzes => Set<Quiz>();
+    public DbSet<QuizQuestion> QuizQuestions => Set<QuizQuestion>();
+    public DbSet<QuizAttempt> QuizAttempts => Set<QuizAttempt>();
+
+    // Course reviews
+    public DbSet<CourseReview> CourseReviews => Set<CourseReview>();
+    public DbSet<CourseReviewReply> CourseReviewReplies => Set<CourseReviewReply>();
+    public DbSet<CourseReviewHelpful> CourseReviewHelpfuls => Set<CourseReviewHelpful>();
+
+    // Certificates
+    public DbSet<Certificate> Certificates => Set<Certificate>();
+
     // ========================
     // Model Config
     // ========================
@@ -98,6 +113,7 @@ public class ApplicationDbContext
 
             entity.Property(x => x.EnrolledAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
             entity.Property(x => x.Progress).HasDefaultValue(0);
+            entity.Property(x => x.IsCompleted).HasDefaultValue(false);
         });
 
         // ========================
@@ -113,6 +129,7 @@ public class ApplicationDbContext
             entity.Property(e => e.Level).HasConversion<int>().HasDefaultValue(CourseLevel.Beginner);
             entity.Property(x => x.IsFeatured).HasDefaultValue(false);
             entity.Property(x => x.Rating).HasDefaultValue(0);
+            entity.Property(x => x.ReviewCount).HasDefaultValue(0);
             entity.Property(x => x.TotalDurationSeconds).HasDefaultValue(0);
             entity.Property(x => x.LessonCount).HasDefaultValue(0);
             entity.Property(x => x.ChapterCount).HasDefaultValue(0);
@@ -484,6 +501,67 @@ public class ApplicationDbContext
         });
 
         // ========================
+        // COURSE REVIEW
+        // ========================
+        builder.Entity<CourseReview>(entity =>
+        {
+            entity.Property(x => x.Content).IsRequired().HasMaxLength(2000);
+            entity.Property(x => x.HelpfulCount).HasDefaultValue(0);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+
+            entity.HasOne(x => x.Course)
+                .WithMany()
+                .HasForeignKey(x => x.CourseId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(x => x.CourseId);
+        });
+
+        // ========================
+        // COURSE REVIEW REPLY
+        // ========================
+        builder.Entity<CourseReviewReply>(entity =>
+        {
+            entity.Property(x => x.Content).IsRequired().HasMaxLength(2000);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+
+            entity.HasOne(x => x.Review)
+                .WithMany(r => r.Replies)
+                .HasForeignKey(x => x.ReviewId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(x => x.ReviewId);
+        });
+
+        // ========================
+        // COURSE REVIEW HELPFUL
+        // ========================
+        builder.Entity<CourseReviewHelpful>(entity =>
+        {
+            entity.HasKey(x => new { x.ReviewId, x.UserId });
+
+            entity.HasOne(x => x.Review)
+                .WithMany(r => r.Helpfuls)
+                .HasForeignKey(x => x.ReviewId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ========================
         // ROADMAP
         // ========================
         builder.Entity<Roadmap>(entity =>
@@ -516,6 +594,106 @@ public class ApplicationDbContext
         });
 
         // ========================
+        // QUIZ (lesson quiz + course test share one table via QuizType)
+        // ========================
+        builder.Entity<Quiz>(entity =>
+        {
+            entity.Property(x => x.Title).IsRequired().HasMaxLength(255);
+            entity.Property(x => x.QuizType).HasConversion<int>();
+            entity.Property(x => x.PassPercentage).HasDefaultValue(70);
+            entity.Property(x => x.TimeLimitMinutes).HasDefaultValue(10);
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+
+            entity.HasOne(x => x.Lesson)
+                .WithMany()
+                .HasForeignKey(x => x.LessonId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.Course)
+                .WithMany()
+                .HasForeignKey(x => x.CourseId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // One lesson quiz per lesson, one course test per course (partial — only enforced for non-deleted rows at query time; a unique index can't easily express IsDeleted exclusion across providers, so this is enforced in the controller's upsert instead).
+            entity.HasIndex(x => x.LessonId);
+            entity.HasIndex(x => new { x.CourseId, x.QuizType });
+        });
+
+        var optionsListComparer = new ValueComparer<List<QuizOptionItem>>(
+            (a, b) => JsonSerializer.Serialize(a, (JsonSerializerOptions?)null) == JsonSerializer.Serialize(b, (JsonSerializerOptions?)null),
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null).GetHashCode(),
+            v => JsonSerializer.Deserialize<List<QuizOptionItem>>(JsonSerializer.Serialize(v, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)!);
+
+        builder.Entity<QuizQuestion>(entity =>
+        {
+            entity.Property(x => x.Content).IsRequired().HasMaxLength(2000);
+
+            entity.Property(x => x.Options)
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => JsonSerializer.Deserialize<List<QuizOptionItem>>(v, (JsonSerializerOptions?)null) ?? new List<QuizOptionItem>())
+                .Metadata.SetValueComparer(optionsListComparer);
+
+            entity.HasOne(x => x.Quiz)
+                .WithMany(q => q.Questions)
+                .HasForeignKey(x => x.QuizId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(x => new { x.QuizId, x.OrderIndex });
+        });
+
+        var answersListComparer = new ValueComparer<List<QuizAnswerSnapshot>>(
+            (a, b) => JsonSerializer.Serialize(a, (JsonSerializerOptions?)null) == JsonSerializer.Serialize(b, (JsonSerializerOptions?)null),
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null).GetHashCode(),
+            v => JsonSerializer.Deserialize<List<QuizAnswerSnapshot>>(JsonSerializer.Serialize(v, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)!);
+
+        builder.Entity<QuizAttempt>(entity =>
+        {
+            entity.Property(x => x.Answers)
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => JsonSerializer.Deserialize<List<QuizAnswerSnapshot>>(v, (JsonSerializerOptions?)null) ?? new List<QuizAnswerSnapshot>())
+                .Metadata.SetValueComparer(answersListComparer);
+
+            entity.HasOne(x => x.Quiz)
+                .WithMany(q => q.Attempts)
+                .HasForeignKey(x => x.QuizId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(x => new { x.QuizId, x.UserId });
+        });
+
+        builder.Entity<Quiz>().HasQueryFilter(x => !x.IsDeleted);
+
+        // ========================
+        // CERTIFICATE
+        // ========================
+        builder.Entity<Certificate>(entity =>
+        {
+            entity.Property(x => x.CertificateCode).IsRequired().HasMaxLength(64);
+
+            entity.HasOne(x => x.Course)
+                .WithMany()
+                .HasForeignKey(x => x.CourseId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(x => new { x.CourseId, x.UserId }).IsUnique();
+            entity.HasIndex(x => x.CertificateCode).IsUnique();
+        });
+
+        // ========================
         // SOFT DELETE FILTERS
         // ========================
         builder.Entity<Course>().HasQueryFilter(x => !x.IsDeleted);
@@ -533,6 +711,8 @@ public class ApplicationDbContext
         builder.Entity<LessonComment>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<LessonQuestion>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<QuestionAnswer>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<CourseReview>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<CourseReviewReply>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Roadmap>().HasQueryFilter(x => !x.IsDeleted);
 
         // ========================

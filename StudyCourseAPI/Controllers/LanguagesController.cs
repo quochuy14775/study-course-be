@@ -3,10 +3,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StudyCourseAPI.DTOs.Requests.Admin;
 using StudyCourseAPI.DTOs.Responses.Admin;
+using StudyCourseAPI.Extensions;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
 
-namespace StudyCourseAPI.Controllers.AdminController
+namespace StudyCourseAPI.Controllers
 {
     [Route("api/[controller]")]
     [Authorize]
@@ -60,12 +61,12 @@ namespace StudyCourseAPI.Controllers.AdminController
         public async Task<IActionResult> Post([FromBody] LanguageRequest model)
         {
             if (string.IsNullOrWhiteSpace(model.Name))
-                return BadRequest(new { message = "Name is required." });
+                return BadRequest(new { status = 400, message = "Name is required." });
             if (string.IsNullOrWhiteSpace(model.Slug))
-                return BadRequest(new { message = "Slug is required." });
+                return BadRequest(new { status = 400, message = "Slug is required." });
 
             if (await _baseRepository.Query().AnyAsync(l => l.Slug == model.Slug && !l.IsDeleted))
-                return BadRequest(new { message = "Slug already exists." });
+                return BadRequest(new { status = 400, message = "Slug already exists." });
 
             var entity = new Language
             {
@@ -96,7 +97,7 @@ namespace StudyCourseAPI.Controllers.AdminController
             if (entity == null) return NotFound();
 
             if (await _baseRepository.Query().AnyAsync(l => l.Slug == model.Slug && l.Id != id && !l.IsDeleted))
-                return BadRequest(new { message = "Slug already exists." });
+                return BadRequest(new { status = 400, message = "Slug already exists." });
 
             entity.Name = model.Name.Trim();
             entity.Slug = model.Slug.Trim().ToLower();
@@ -124,13 +125,12 @@ namespace StudyCourseAPI.Controllers.AdminController
             if (entity == null) return NotFound();
 
             entity.IsDeleted = true;
-            entity.UpdatedAt = DateTime.UtcNow;
             await _baseRepository.SaveChangesAsync();
 
             return Ok(new { success = true });
         }
 
-        private async Task SyncFrameworksAsync(long languageId, List<long>? frameworkIds)
+        private Task SyncFrameworksAsync(long languageId, List<long>? frameworkIds)
         {
             frameworkIds ??= new List<long>();
 
@@ -147,25 +147,11 @@ namespace StudyCourseAPI.Controllers.AdminController
                     .Select(f => f.Id)
                     .ToListAsync();
 
-            await Task.WhenAll(currentTask, validIdsTask);
-
-            var current = currentTask.Result;
-            var targetIds = validIdsTask.Result.ToHashSet();
-            var currentIds = current.Select(lf => lf.FrameworkId).ToHashSet();
-
-            foreach (var link in current)
-            {
-                if (!targetIds.Contains(link.FrameworkId))
-                    _languageFrameworkRepository.Remove(link);
-            }
-
-            foreach (var fwId in targetIds)
-            {
-                if (!currentIds.Contains(fwId))
-                    _languageFrameworkRepository.Add(new LanguageFramework { LanguageId = languageId, FrameworkId = fwId });
-            }
-
-            await _languageFrameworkRepository.SaveChangesAsync();
+            return _languageFrameworkRepository.SyncLinksAsync(
+                currentTask,
+                validIdsTask,
+                lf => lf.FrameworkId,
+                fwId => new LanguageFramework { LanguageId = languageId, FrameworkId = fwId });
         }
     }
 }
