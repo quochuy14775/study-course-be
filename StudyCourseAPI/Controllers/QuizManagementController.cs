@@ -1,12 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using StudyCourseAPI.DTOs.Requests.Admin;
-using StudyCourseAPI.DTOs.Responses.Admin;
-using StudyCourseAPI.Enums;
 using StudyCourseAPI.Extensions;
 using StudyCourseAPI.Models;
-using StudyCourseAPI.Repositories;
+using StudyCourseAPI.Services;
 
 namespace StudyCourseAPI.Controllers
 {
@@ -18,71 +15,41 @@ namespace StudyCourseAPI.Controllers
     /// </summary>
     [Route("api/admin/lessons/{lessonId:long}/quiz")]
     [Authorize(Roles = AppRoles.Admin)]
-    public class LessonQuizManagementController : BaseController<Quiz>
+    public class LessonQuizManagementController : ControllerBase
     {
-        private readonly IRepository<Lesson> _lessonRepository;
+        private readonly IQuizManagementService _quizManagementService;
 
-        public LessonQuizManagementController(
-            IRepository<Quiz> baseRepository,
-            IRepository<Lesson> lessonRepository,
-            ICurrentUser currentUser)
-            : base(baseRepository, currentUser)
+        public LessonQuizManagementController(IQuizManagementService quizManagementService)
         {
-            _lessonRepository = lessonRepository;
+            _quizManagementService = quizManagementService;
         }
 
         [HttpGet]
         public async Task<IActionResult> Get(long lessonId)
         {
-            var quiz = await _baseRepository.Query()
-                .AsNoTracking()
-                .Include(q => q.Questions)
-                .FirstOrDefaultAsync(q => q.LessonId == lessonId && q.QuizType == QuizType.Lesson && !q.IsDeleted);
+            var quiz = await _quizManagementService.GetLessonQuizAsync(lessonId);
 
             if (quiz == null) return NotFound();
-            return Ok(new QuizResponse(quiz));
+            return Ok(quiz);
         }
 
         [HttpPut]
         public async Task<IActionResult> Upsert(long lessonId, [FromBody] QuizRequest model)
         {
-            var lesson = await _lessonRepository.Query()
-                .FirstOrDefaultAsync(l => l.Id == lessonId && !l.IsDeleted);
-            if (lesson == null) return NotFound(new { message = "Lesson not found." });
+            var result = await _quizManagementService.UpsertLessonQuizAsync(lessonId, model);
 
-            var (success, errors) = model.ValidateQuiz();
-            if (!success)
-                return this.ValidationFailed(errors);
+            if (result.IsNotFound) return NotFound(new { message = result.NotFoundMessage });
+            if (!result.IsSuccess) return this.ValidationFailed(result.Errors);
 
-            var entity = await _baseRepository.Query()
-                .Include(q => q.Questions)
-                .FirstOrDefaultAsync(q => q.LessonId == lessonId && q.QuizType == QuizType.Lesson && !q.IsDeleted);
-
-            if (entity == null)
-            {
-                entity = model.ToEntity(QuizType.Lesson, lesson.CourseId, lessonId);
-                _baseRepository.Add(entity);
-            }
-            else
-            {
-                model.MapTo(entity);
-            }
-
-            await _baseRepository.SaveChangesAsync();
-
-            return Ok(new { success = true, message = "Lesson quiz saved.", data = new QuizResponse(entity) });
+            return Ok(new { success = true, message = "Lesson quiz saved.", data = result.Data });
         }
 
         [HttpDelete]
         public async Task<IActionResult> Delete(long lessonId)
         {
-            var entity = await _baseRepository.Query()
-                .FirstOrDefaultAsync(q => q.LessonId == lessonId && q.QuizType == QuizType.Lesson && !q.IsDeleted);
-            if (entity == null) return NotFound();
+            var deleted = await _quizManagementService.DeleteLessonQuizAsync(lessonId);
 
-            entity.IsDeleted = true;
-            await _baseRepository.SaveChangesAsync();
-
+            if (!deleted) return NotFound();
             return Ok(new { success = true });
         }
     }
@@ -90,71 +57,41 @@ namespace StudyCourseAPI.Controllers
     /// <summary>Admin authoring for the course-level final test: GET/PUT/DELETE api/admin/courses/{courseId}/test.</summary>
     [Route("api/admin/courses/{courseId:long}/test")]
     [Authorize(Roles = AppRoles.Admin)]
-    public class CourseTestManagementController : BaseController<Quiz>
+    public class CourseTestManagementController : ControllerBase
     {
-        private readonly IRepository<Course> _courseRepository;
+        private readonly IQuizManagementService _quizManagementService;
 
-        public CourseTestManagementController(
-            IRepository<Quiz> baseRepository,
-            IRepository<Course> courseRepository,
-            ICurrentUser currentUser)
-            : base(baseRepository, currentUser)
+        public CourseTestManagementController(IQuizManagementService quizManagementService)
         {
-            _courseRepository = courseRepository;
+            _quizManagementService = quizManagementService;
         }
 
         [HttpGet]
         public async Task<IActionResult> Get(long courseId)
         {
-            var quiz = await _baseRepository.Query()
-                .AsNoTracking()
-                .Include(q => q.Questions)
-                .FirstOrDefaultAsync(q => q.CourseId == courseId && q.QuizType == QuizType.CourseTest && !q.IsDeleted);
+            var quiz = await _quizManagementService.GetCourseTestAsync(courseId);
 
             if (quiz == null) return NotFound();
-            return Ok(new QuizResponse(quiz));
+            return Ok(quiz);
         }
 
         [HttpPut]
         public async Task<IActionResult> Upsert(long courseId, [FromBody] QuizRequest model)
         {
-            var course = await _courseRepository.Query()
-                .FirstOrDefaultAsync(c => c.Id == courseId && !c.IsDeleted);
-            if (course == null) return NotFound(new { message = "Course not found." });
+            var result = await _quizManagementService.UpsertCourseTestAsync(courseId, model);
 
-            var (success, errors) = model.ValidateQuiz();
-            if (!success)
-                return this.ValidationFailed(errors);
+            if (result.IsNotFound) return NotFound(new { message = result.NotFoundMessage });
+            if (!result.IsSuccess) return this.ValidationFailed(result.Errors);
 
-            var entity = await _baseRepository.Query()
-                .Include(q => q.Questions)
-                .FirstOrDefaultAsync(q => q.CourseId == courseId && q.QuizType == QuizType.CourseTest && !q.IsDeleted);
-
-            if (entity == null)
-            {
-                entity = model.ToEntity(QuizType.CourseTest, courseId, null);
-                _baseRepository.Add(entity);
-            }
-            else
-            {
-                model.MapTo(entity);
-            }
-
-            await _baseRepository.SaveChangesAsync();
-
-            return Ok(new { success = true, message = "Course test saved.", data = new QuizResponse(entity) });
+            return Ok(new { success = true, message = "Course test saved.", data = result.Data });
         }
 
         [HttpDelete]
         public async Task<IActionResult> Delete(long courseId)
         {
-            var entity = await _baseRepository.Query()
-                .FirstOrDefaultAsync(q => q.CourseId == courseId && q.QuizType == QuizType.CourseTest && !q.IsDeleted);
-            if (entity == null) return NotFound();
+            var deleted = await _quizManagementService.DeleteCourseTestAsync(courseId);
 
-            entity.IsDeleted = true;
-            await _baseRepository.SaveChangesAsync();
-
+            if (!deleted) return NotFound();
             return Ok(new { success = true });
         }
     }

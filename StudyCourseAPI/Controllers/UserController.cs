@@ -1,11 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using StudyCourseAPI.DTOs.Requests.User;
-using StudyCourseAPI.DTOs.Responses.User;
-using StudyCourseAPI.Extensions;
-using StudyCourseAPI.Models;
-using StudyCourseAPI.Repositories;
+using StudyCourseAPI.Services;
 
 namespace StudyCourseAPI.Controllers;
 
@@ -14,50 +10,41 @@ namespace StudyCourseAPI.Controllers;
 [Authorize]
 public class UserController : ControllerBase
 {
-    private readonly ICurrentUser _currentUser;
-    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IUserProfileService _userProfileService;
 
-    public UserController(ICurrentUser currentUser, UserManager<ApplicationUser> userManager)
+    public UserController(IUserProfileService userProfileService)
     {
-        _currentUser = currentUser;
-        _userManager = userManager;
+        _userProfileService = userProfileService;
     }
 
     [HttpGet("me")]
     public async Task<IActionResult> GetMe()
     {
-        var user = _currentUser.GetCurrentUser();
-        if (user is null) return Unauthorized();
+        var profile = await _userProfileService.GetMeAsync();
 
-        var roles = await _userManager.GetRolesAsync(user);
-        return Ok(UserProfileResponse.UserProfile(user, roles));
+        if (profile is null) return Unauthorized();
+        return Ok(profile);
     }
 
     [HttpPut("me")]
     public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
     {
-        var user = _currentUser.GetCurrentUser();
-        if (user is null) return Unauthorized();
+        // null = không xác định được user đang đăng nhập
+        var result = await _userProfileService.UpdateProfileAsync(request);
 
-        request.MapTo(user);
+        if (result is null) return Unauthorized();
+        if (!result.IsSuccess) return BadRequest(result.ErrorMessages);
 
-        var result = await _userManager.UpdateAsync(user);
-        if (!result.Succeeded)
-            return BadRequest(result.Errors.Select(e => e.Description));
-
-        var roles = await _userManager.GetRolesAsync(user);
-        return Ok(UserProfileResponse.UserProfile(user, roles));
+        return Ok(result.Data);
     }
 
     [HttpPut("change-password")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
-        var user = _currentUser.GetCurrentUser();
-        if (user is null) return Unauthorized();
+        var result = await _userProfileService.ChangePasswordAsync(request);
 
-        var result = await _userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
-        if (!result.Succeeded)
-            return BadRequest(result.Errors.Select(e => e.Description));
+        if (result is null) return Unauthorized();
+        if (!result.IsSuccess) return BadRequest(result.ErrorMessages);
 
         return Ok();
     }

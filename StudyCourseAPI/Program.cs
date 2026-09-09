@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using StudyCourseAPI.Configurations;
 using StudyCourseAPI.Data;
+using StudyCourseAPI.Extensions;
 using StudyCourseAPI.Middleware;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Repositories;
@@ -26,15 +27,19 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
-builder.Services.AddSingleton<IJwtService, JwtService>();
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddHttpClient<IGroqService, GroqService>();
-builder.Services.AddSingleton<IAiResponseParser, AiResponseParser>();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
-builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
+
+// Service có lifetime khác Scoped — phải đăng ký TRƯỚC AddApplicationServices()
+// vì hàm đó dùng TryAdd và sẽ bỏ qua những gì đã có mặt ở đây.
+builder.Services.AddSingleton<IJwtService, JwtService>();
 builder.Services.AddSingleton<IEmailService, EmailService>();
+builder.Services.AddSingleton<IAiResponseParser, AiResponseParser>();
+builder.Services.AddHttpClient<IGroqService, GroqService>();
+
+// Quét assembly, đăng ký Scoped cho mọi cặp IFooService ↔ FooService còn lại
+builder.Services.AddApplicationServices();
 #endregion
 
 #region Identity

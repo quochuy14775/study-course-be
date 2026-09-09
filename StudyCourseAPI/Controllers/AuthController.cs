@@ -3,8 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using StudyCourseAPI.DTOs.Requests;
 using StudyCourseAPI.Models;
 using StudyCourseAPI.Services;
-using StudyCourseAPI.Services;
-using StudyCourseAPI.Services.Auth;
 
 namespace StudyCourseAPI.Controllers
 {

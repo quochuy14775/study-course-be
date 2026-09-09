@@ -1,51 +1,31 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using StudyCourseAPI.DTOs.Responses.User;
-using StudyCourseAPI.Models;
-using StudyCourseAPI.Repositories;
+using StudyCourseAPI.Services;
 
 namespace StudyCourseAPI.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
 [Authorize]
-public class NotificationsController : BaseController<Notification>
+public class NotificationsController : ControllerBase
 {
-    public NotificationsController(IRepository<Notification> repo, ICurrentUser currentUser)
-        : base(repo, currentUser) { }
+    private readonly IUserNotificationService _notificationService;
+
+    public NotificationsController(IUserNotificationService notificationService)
+    {
+        _notificationService = notificationService;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int? top = 20, [FromQuery] bool? unreadOnly = false)
     {
-        var userId = _currentUser.GetCurrentUserId();
-        var q = _baseRepository.Query().AsNoTracking().Where(n => n.UserId == userId);
-
-        if (unreadOnly == true) q = q.Where(n => !n.IsRead);
-
-        // Projection inside query → only fetch needed columns, no tracking overhead
-        var list = await q.OrderByDescending(n => n.CreatedAt)
-            .Take(top ?? 20)
-            .Select(n => new NotificationResponse
-            {
-                Id        = n.Id,
-                Message   = n.Message,
-                Type      = n.Type,
-                LinkUrl   = n.LinkUrl,
-                IsRead    = n.IsRead,
-                CreatedAt = n.CreatedAt,
-            }).ToListAsync();
-
-        return Ok(list);
+        return Ok(await _notificationService.GetAllAsync(top, unreadOnly));
     }
 
     [HttpGet("unread-count")]
     public async Task<IActionResult> GetUnreadCount()
     {
-        var userId = _currentUser.GetCurrentUserId();
-        var count = await _baseRepository.Query()
-            .AsNoTracking()
-            .CountAsync(n => n.UserId == userId && !n.IsRead);
+        var count = await _notificationService.GetUnreadCountAsync();
         return Ok(new { count });
     }
 
@@ -53,33 +33,17 @@ public class NotificationsController : BaseController<Notification>
     [HttpPut("{id:long}/read")]
     public async Task<IActionResult> MarkRead(long id)
     {
-        var userId = _currentUser.GetCurrentUserId();
-        var now = DateTime.UtcNow;
-        var affected = await _baseRepository.Query()
-            .Where(n => n.Id == id && n.UserId == userId && !n.IsRead)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(n => n.IsRead, true)
-                .SetProperty(n => n.ReadAt, now));
+        // null = không tồn tại; true/false = vừa đánh dấu / đã đọc từ trước
+        var marked = await _notificationService.MarkReadAsync(id);
 
-        return affected == 0
-            ? (await _baseRepository.Query().AsNoTracking().AnyAsync(n => n.Id == id && n.UserId == userId)
-                ? NoContent()      // already read
-                : NotFound())
-            : NoContent();
+        return marked == null ? NotFound() : NoContent();
     }
 
     // ── Mark-all-read: bulk atomic ───────────────────────────────────────────
     [HttpPut("read-all")]
     public async Task<IActionResult> MarkAllRead()
     {
-        var userId = _currentUser.GetCurrentUserId();
-        var now = DateTime.UtcNow;
-        var affected = await _baseRepository.Query()
-            .Where(n => n.UserId == userId && !n.IsRead)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(n => n.IsRead, true)
-                .SetProperty(n => n.ReadAt, now));
-
+        var affected = await _notificationService.MarkAllReadAsync();
         return Ok(new { marked = affected });
     }
 
@@ -87,22 +51,15 @@ public class NotificationsController : BaseController<Notification>
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> Delete(long id)
     {
-        var userId = _currentUser.GetCurrentUserId();
-        var affected = await _baseRepository.Query()
-            .Where(x => x.Id == id && x.UserId == userId)
-            .ExecuteDeleteAsync();
+        var deleted = await _notificationService.DeleteAsync(id);
 
-        return affected == 0 ? NotFound() : NoContent();
+        return deleted ? NoContent() : NotFound();
     }
 
     [HttpDelete("clear-all")]
     public async Task<IActionResult> ClearAll()
     {
-        var userId = _currentUser.GetCurrentUserId();
-        var affected = await _baseRepository.Query()
-            .Where(n => n.UserId == userId)
-            .ExecuteDeleteAsync();
-
+        var affected = await _notificationService.ClearAllAsync();
         return Ok(new { deleted = affected });
     }
 }

@@ -1,26 +1,20 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using StudyCourseAPI.DTOs.Requests.Admin;
-using StudyCourseAPI.DTOs.Responses.Admin;
 using StudyCourseAPI.Models;
-using StudyCourseAPI.Repositories;
+using StudyCourseAPI.Services;
 
 namespace StudyCourseAPI.Controllers
 {
     [Route("api/Courses/{courseId}/[controller]")]
     [Authorize]
-    public class ChaptersController : BaseController<Chapter>
+    public class ChaptersController : ControllerBase
     {
-        private readonly IRepository<Course> _courseRepository;
+        private readonly IChapterService _chapterService;
 
-        public ChaptersController(
-            IRepository<Chapter> baseRepository,
-            ICurrentUser currentUser,
-            IRepository<Course> courseRepository)
-            : base(baseRepository, currentUser)
+        public ChaptersController(IChapterService chapterService)
         {
-            _courseRepository = courseRepository;
+            _chapterService = chapterService;
         }
 
         // ─────────────────────────────────────────────────────────
@@ -29,26 +23,10 @@ namespace StudyCourseAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> Get(long courseId)
         {
-            // Combined check + fetch: if course doesn't exist, chapters list will be empty.
-            // Use a single round-trip with AnyAsync for course existence check IF empty result.
-            var chapters = await _baseRepository.Query()
-                .AsNoTracking()
-                .Where(c => c.CourseId == courseId && !c.IsDeleted)
-                .Include(c => c.Lessons.Where(l => !l.IsDeleted))
-                .AsSplitQuery()
-                .OrderBy(c => c.OrderIndex)
-                .ToListAsync();
+            var chapters = await _chapterService.GetByCourseAsync(courseId);
 
-            // Only hit DB for course-existence if no chapters (cheap recovery, common case has data)
-            if (chapters.Count == 0)
-            {
-                var courseExists = await _courseRepository.Query()
-                    .AsNoTracking()
-                    .AnyAsync(c => c.Id == courseId && !c.IsDeleted);
-                if (!courseExists) return NotFound();
-            }
-
-            return Ok(chapters.Select(c => new ChapterResponse(c)));
+            if (chapters == null) return NotFound();
+            return Ok(chapters);
         }
 
         // ─────────────────────────────────────────────────────────
@@ -57,15 +35,10 @@ namespace StudyCourseAPI.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(long courseId, long id)
         {
-            var chapter = await _baseRepository.Query()
-                .AsNoTracking()
-                .Where(c => c.Id == id && c.CourseId == courseId && !c.IsDeleted)
-                .Include(c => c.Lessons.Where(l => !l.IsDeleted))
-                .AsSplitQuery()
-                .FirstOrDefaultAsync();
+            var chapter = await _chapterService.GetByIdAsync(courseId, id);
 
             if (chapter == null) return NotFound();
-            return Ok(new ChapterResponse(chapter));
+            return Ok(chapter);
         }
 
         // ─────────────────────────────────────────────────────────
@@ -75,32 +48,13 @@ namespace StudyCourseAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> Post(long courseId, [FromBody] ChapterRequest model)
         {
-            if (string.IsNullOrWhiteSpace(model.Title))
-                return BadRequest(new { status = 400, message = "Title is required." });
+            var result = await _chapterService.CreateAsync(courseId, model);
 
-            var course = await _courseRepository.Query()
-                .FirstOrDefaultAsync(c => c.Id == courseId && !c.IsDeleted);
+            if (result.ErrorMessage != null)
+                return BadRequest(new { status = 400, message = result.ErrorMessage });
+            if (result.IsNotFound) return NotFound();
 
-            if (course == null) return NotFound();
-
-            var entity = new Chapter
-            {
-                Title = model.Title.Trim(),
-                Description = model.Description?.Trim(),
-                OrderIndex = model.OrderIndex,
-                CourseId = courseId,
-                IsActive = model.IsActive
-            };
-
-            _baseRepository.Add(entity);
-            await _baseRepository.SaveChangesAsync();
-
-            var created = await _baseRepository.Query()
-                .Where(c => c.Id == entity.Id)
-                .Include(c => c.Lessons)
-                .FirstAsync();
-
-            return CreatedAtAction(nameof(Get), new { courseId, id = entity.Id }, new ChapterResponse(created));
+            return CreatedAtAction(nameof(Get), new { courseId, id = result.Data!.Id }, result.Data);
         }
 
         // ─────────────────────────────────────────────────────────
@@ -110,27 +64,13 @@ namespace StudyCourseAPI.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> Put(long courseId, long id, [FromBody] ChapterRequest model)
         {
-            if (string.IsNullOrWhiteSpace(model.Title))
-                return BadRequest(new { status = 400, message = "Title is required." });
+            var result = await _chapterService.UpdateAsync(courseId, id, model);
 
-            var entity = await _baseRepository.Query()
-                .FirstOrDefaultAsync(c => c.Id == id && c.CourseId == courseId && !c.IsDeleted);
+            if (result.ErrorMessage != null)
+                return BadRequest(new { status = 400, message = result.ErrorMessage });
+            if (result.IsNotFound) return NotFound();
 
-            if (entity == null) return NotFound();
-
-            entity.Title = model.Title.Trim();
-            entity.Description = model.Description?.Trim();
-            entity.OrderIndex = model.OrderIndex;
-            entity.IsActive = model.IsActive;
-
-            await _baseRepository.SaveChangesAsync();
-
-            var updated = await _baseRepository.Query()
-                .Where(c => c.Id == entity.Id)
-                .Include(c => c.Lessons)
-                .FirstAsync();
-
-            return Ok(new ChapterResponse(updated));
+            return Ok(result.Data);
         }
 
         // ─────────────────────────────────────────────────────────
@@ -140,16 +80,9 @@ namespace StudyCourseAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(long courseId, long id)
         {
-            var entity = await _baseRepository.Query()
-                .FirstOrDefaultAsync(c => c.Id == id && c.CourseId == courseId && !c.IsDeleted);
+            var deleted = await _chapterService.SoftDeleteAsync(courseId, id);
 
-            if (entity == null) return NotFound();
-
-            entity.IsDeleted = true;
-            entity.IsActive = false;
-
-            await _baseRepository.SaveChangesAsync();
-
+            if (!deleted) return NotFound();
             return Ok(new { success = true });
         }
 
@@ -160,12 +93,7 @@ namespace StudyCourseAPI.Controllers
         [HttpPut("disable")]
         public async Task<IActionResult> Disable(long courseId, [FromBody] List<long> ids)
         {
-            var now = DateTime.UtcNow;
-            var affected = await _baseRepository.Query()
-                .Where(c => ids.Contains(c.Id) && c.CourseId == courseId && !c.IsDeleted)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(c => c.IsActive, false)
-                    .SetProperty(c => c.UpdatedAt, now));
+            var affected = await _chapterService.SetActiveAsync(courseId, ids, isActive: false);
 
             return affected == 0 ? NotFound() : NoContent();
         }
@@ -177,12 +105,7 @@ namespace StudyCourseAPI.Controllers
         [HttpPut("enable")]
         public async Task<IActionResult> Enable(long courseId, [FromBody] List<long> ids)
         {
-            var now = DateTime.UtcNow;
-            var affected = await _baseRepository.Query()
-                .Where(c => ids.Contains(c.Id) && c.CourseId == courseId && !c.IsDeleted)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(c => c.IsActive, true)
-                    .SetProperty(c => c.UpdatedAt, now));
+            var affected = await _chapterService.SetActiveAsync(courseId, ids, isActive: true);
 
             return affected == 0 ? NotFound() : NoContent();
         }

@@ -35,14 +35,12 @@ namespace StudyCourseAPI.Extensions
             };
             certificateRepository.Add(certificate);
 
-            var userCourse = await userCourseRepository.Query()
-                .FirstOrDefaultAsync(uc => uc.CourseId == courseId && uc.UserId == userId && !uc.IsDeleted);
-            if (userCourse != null)
-            {
-                userCourse.IsCompleted = true;
-                userCourse.CompletedAt = DateTime.UtcNow;
-                userCourse.Progress = 100;
-            }
+            // EnsureEnrolled thay vì FirstOrDefault: user pass course test qua deep link có thể
+            // chưa có enrollment, và bỏ qua thì trạng thái "đã hoàn thành" sẽ không được lưu ở đâu cả.
+            var userCourse = await userCourseRepository.EnsureEnrolledAsync(courseId, userId);
+            userCourse.IsCompleted = true;
+            userCourse.CompletedAt = DateTime.UtcNow;
+            userCourse.Progress = 100;
 
             return certificate;
         }

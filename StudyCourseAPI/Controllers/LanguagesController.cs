@@ -1,157 +1,72 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using StudyCourseAPI.DTOs.Requests.Admin;
-using StudyCourseAPI.DTOs.Responses.Admin;
-using StudyCourseAPI.Extensions;
 using StudyCourseAPI.Models;
-using StudyCourseAPI.Repositories;
+using StudyCourseAPI.Services;
 
 namespace StudyCourseAPI.Controllers
 {
     [Route("api/[controller]")]
     [Authorize]
-    public class LanguagesController : BaseController<Language>
+    public class LanguagesController : ControllerBase
     {
-        private readonly IRepository<LanguageFramework> _languageFrameworkRepository;
-        private readonly IRepository<Framework> _frameworkRepository;
+        private readonly ILanguageService _languageService;
 
-        public LanguagesController(
-            IRepository<Language> baseRepository,
-            ICurrentUser currentUser,
-            IRepository<LanguageFramework> languageFrameworkRepository,
-            IRepository<Framework> frameworkRepository)
-            : base(baseRepository, currentUser)
+        public LanguagesController(ILanguageService languageService)
         {
-            _languageFrameworkRepository = languageFrameworkRepository;
-            _frameworkRepository = frameworkRepository;
+            _languageService = languageService;
         }
 
         [AllowAnonymous]
         [HttpGet]
         public async Task<IActionResult> Get()
         {
-            var languages = await _baseRepository.Query()
-                .AsNoTracking()
-                .Where(l => !l.IsDeleted && l.IsActive)
-                .Include(l => l.LanguageFrameworks).ThenInclude(lf => lf.Framework)
-                .AsSplitQuery()
-                .OrderBy(l => l.Name)
-                .ToListAsync();
-
-            return Ok(languages.Select(l => new LanguageResponse(l)));
+            return Ok(await _languageService.GetListAsync());
         }
 
         [AllowAnonymous]
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(long id)
         {
-            var entity = await _baseRepository.Query()
-                .AsNoTracking()
-                .Include(l => l.LanguageFrameworks).ThenInclude(lf => lf.Framework)
-                .AsSplitQuery()
-                .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted);
+            var language = await _languageService.GetByIdAsync(id);
 
-            if (entity == null) return NotFound();
-            return Ok(new LanguageResponse(entity));
+            if (language == null) return NotFound();
+            return Ok(language);
         }
 
         [Authorize(Roles = AppRoles.Admin)]
         [HttpPost]
         public async Task<IActionResult> Post([FromBody] LanguageRequest model)
         {
-            if (string.IsNullOrWhiteSpace(model.Name))
-                return BadRequest(new { status = 400, message = "Name is required." });
-            if (string.IsNullOrWhiteSpace(model.Slug))
-                return BadRequest(new { status = 400, message = "Slug is required." });
+            var result = await _languageService.CreateAsync(model);
 
-            if (await _baseRepository.Query().AnyAsync(l => l.Slug == model.Slug && !l.IsDeleted))
-                return BadRequest(new { status = 400, message = "Slug already exists." });
+            if (!result.IsSuccess)
+                return BadRequest(new { status = 400, message = result.ErrorMessage });
 
-            var entity = new Language
-            {
-                Name = model.Name.Trim(),
-                Slug = model.Slug.Trim().ToLower(),
-                IconUrl = model.IconUrl?.Trim(),
-                IsActive = model.IsActive
-            };
-            _baseRepository.Add(entity);
-            await _baseRepository.SaveChangesAsync();
-
-            await SyncFrameworksAsync(entity.Id, model.FrameworkIds);
-
-            var created = await _baseRepository.Query()
-                .Include(l => l.LanguageFrameworks).ThenInclude(lf => lf.Framework)
-                .FirstAsync(l => l.Id == entity.Id);
-
-            return CreatedAtAction(nameof(Get), new { id = entity.Id }, new LanguageResponse(created));
+            return CreatedAtAction(nameof(Get), new { id = result.Data!.Id }, result.Data);
         }
 
         [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("{id}")]
         public async Task<IActionResult> Put(long id, [FromBody] LanguageRequest model)
         {
-            var entity = await _baseRepository.Query()
-                .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted);
+            var result = await _languageService.UpdateAsync(id, model);
 
-            if (entity == null) return NotFound();
+            if (result.IsNotFound) return NotFound();
+            if (!result.IsSuccess)
+                return BadRequest(new { status = 400, message = result.ErrorMessage });
 
-            if (await _baseRepository.Query().AnyAsync(l => l.Slug == model.Slug && l.Id != id && !l.IsDeleted))
-                return BadRequest(new { status = 400, message = "Slug already exists." });
-
-            entity.Name = model.Name.Trim();
-            entity.Slug = model.Slug.Trim().ToLower();
-            entity.IconUrl = model.IconUrl?.Trim();
-            entity.IsActive = model.IsActive;
-            await _baseRepository.SaveChangesAsync();
-
-            if (model.FrameworkIds != null)
-                await SyncFrameworksAsync(entity.Id, model.FrameworkIds);
-
-            var updated = await _baseRepository.Query()
-                .Include(l => l.LanguageFrameworks).ThenInclude(lf => lf.Framework)
-                .FirstAsync(l => l.Id == entity.Id);
-
-            return Ok(new LanguageResponse(updated));
+            return Ok(result.Data);
         }
 
         [Authorize(Roles = AppRoles.Admin)]
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(long id)
         {
-            var entity = await _baseRepository.Query()
-                .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted);
+            var deleted = await _languageService.SoftDeleteAsync(id);
 
-            if (entity == null) return NotFound();
-
-            entity.IsDeleted = true;
-            await _baseRepository.SaveChangesAsync();
-
+            if (!deleted) return NotFound();
             return Ok(new { success = true });
-        }
-
-        private Task SyncFrameworksAsync(long languageId, List<long>? frameworkIds)
-        {
-            frameworkIds ??= new List<long>();
-
-            // Parallel: fetch current links + validate new framework ids
-            var currentTask = _languageFrameworkRepository.Query()
-                .Where(lf => lf.LanguageId == languageId)
-                .ToListAsync();
-
-            var validIdsTask = frameworkIds.Count == 0
-                ? Task.FromResult(new List<long>())
-                : _frameworkRepository.Query()
-                    .AsNoTracking()
-                    .Where(f => frameworkIds.Contains(f.Id) && !f.IsDeleted)
-                    .Select(f => f.Id)
-                    .ToListAsync();
-
-            return _languageFrameworkRepository.SyncLinksAsync(
-                currentTask,
-                validIdsTask,
-                lf => lf.FrameworkId,
-                fwId => new LanguageFramework { LanguageId = languageId, FrameworkId = fwId });
         }
     }
 }

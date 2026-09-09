@@ -1,32 +1,25 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.OData.Routing.Controllers;
 using StudyCourseAPI.DTOs.Requests.Admin;
 using StudyCourseAPI.DTOs.Responses;
 using StudyCourseAPI.DTOs.Responses.Admin;
 using StudyCourseAPI.Extensions;
 using StudyCourseAPI.Models;
-using StudyCourseAPI.Repositories;
+using StudyCourseAPI.Services;
 
 namespace StudyCourseAPI.Controllers
 {
     [Route("api/Courses/{courseId}/[controller]")]
     [Authorize]
-    public class LessonsController : BaseController<Lesson>
+    public class LessonsController : ODataController
     {
-        private readonly IRepository<Course> _courseRepository;
-        private readonly IRepository<Chapter> _chapterRepository;
+        private readonly ILessonService _lessonService;
 
-        public LessonsController(
-            IRepository<Lesson> baseRepository,
-            ICurrentUser currentUser,
-            IRepository<Course> courseRepository,
-            IRepository<Chapter> chapterRepository)
-            : base(baseRepository, currentUser)
+        public LessonsController(ILessonService lessonService)
         {
-            _courseRepository = courseRepository;
-            _chapterRepository = chapterRepository;
+            _lessonService = lessonService;
         }
 
         // ─────────────────────────────────────────────────────────
@@ -35,136 +28,51 @@ namespace StudyCourseAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> Get(long courseId, [FromQuery] long? chapterId, ODataQueryOptions<Lesson> queryOptions)
         {
-            var queryable = _baseRepository.Query()
-                .Where(x => !x.IsDeleted && x.CourseId == courseId);
-
-            if (chapterId.HasValue)
-                queryable = queryable.Where(x => x.ChapterId == chapterId.Value);
-
-            var (count, vm) = await queryable.AppendQueryOptionsAsync(queryOptions);
+            var (count, items) = await _lessonService.GetListAsync(courseId, chapterId, queryOptions);
 
             return Ok(new ODataResponse<LessonResponse>
             {
                 Count = count,
-                Value = vm.Select(x => new LessonResponse(x))
+                Value = items
             });
         }
 
         // ─────────────────────────────────────────────────────────
-        // GET single — single round-trip with existence check
+        // GET single
         // ─────────────────────────────────────────────────────────
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(long courseId, long id)
         {
-            // Skip the separate course existence query — use a single lesson query.
-            // If lesson exists and belongs to course, course implicitly exists.
-            var lesson = await _baseRepository.Query()
-                .AsNoTracking()
-                .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted && l.CourseId == courseId);
+            var lesson = await _lessonService.GetByIdAsync(courseId, id);
 
             if (lesson == null) return NotFound();
-            return Ok(new LessonDetailResponse(lesson));
+            return Ok(lesson);
         }
 
         // ─────────────────────────────────────────────────────────
         // POST — bulk create lessons within a chapter
-        // Always creates a new chapter containing the lessons
         // ─────────────────────────────────────────────────────────
         [Authorize(Roles = AppRoles.Admin)]
         [HttpPost]
         public async Task<IActionResult> Post(long courseId, [FromBody] BulkCreateLessonsRequest request)
         {
-            if (request == null || request.Lessons == null || request.Lessons.Count == 0)
-                return BadRequest(new { status = 400, message = "Request body must contain at least one lesson." });
+            var result = await _lessonService.BulkCreateAsync(courseId, request);
 
-            var course = await _courseRepository.Query()
-                .FirstOrDefaultAsync(c => c.Id == courseId && !c.IsDeleted);
-            if (course == null) return NotFound();
+            if (result.ErrorMessage != null)
+                return BadRequest(new { status = 400, message = result.ErrorMessage });
+            if (result.IsNotFound) return NotFound();
+            if (!result.IsSuccess) return this.ValidationFailed(result.Errors);
 
-            // Determine chapter to use (optional — null = Chưa phân loại)
-            Chapter? chapter = null;
-            bool isNewChapter = false;
-
-            if (request.NewChapter != null)
-            {
-                isNewChapter = true;
-                chapter = new Chapter
-                {
-                    Title = request.NewChapter.Title ?? string.Empty,
-                    Description = request.NewChapter.Description,
-                    OrderIndex = request.NewChapter.OrderIndex,
-                    CourseId = courseId,
-                    IsActive = true
-                };
-
-                _chapterRepository.Add(chapter);
-                await _chapterRepository.SaveChangesAsync();
-            }
-            else if (request.ChapterId.HasValue)
-            {
-                chapter = await _chapterRepository.Query()
-                    .FirstOrDefaultAsync(c => c.Id == request.ChapterId.Value && c.CourseId == courseId && !c.IsDeleted);
-
-                if (chapter == null)
-                    return BadRequest(new { status = 400, message = "Chapter not found." });
-            }
-            // else: no chapter → lessons go to uncategorized (chapterId = null)
-
-            // Assign chapter to lessons (null = uncategorized)
-            foreach (var lesson in request.Lessons)
-            {
-                lesson.ChapterId = chapter?.Id;
-            }
-
-            // Validate each item; collect indexed errors
-            var allErrors = new Dictionary<string, object>();
-            for (var i = 0; i < request.Lessons.Count; i++)
-            {
-                var (success, errors) = await request.Lessons[i].ValidateLessonAsync(
-                    _baseRepository, _chapterRepository, courseId);
-
-                if (!success && errors != null)
-                {
-                    foreach (var kv in errors)
-                    {
-                        if (kv.Value == null || kv.Value.Count == 0) continue;
-                        var key = $"Lessons[{i}].{kv.Key}";
-                        allErrors[key] = kv.Value.Count == 1 ? kv.Value[0] : (object)kv.Value;
-                    }
-                }
-            }
-
-            if (allErrors.Any())
-                return BadRequest(new { status = 400, message = "Validation failed", errors = allErrors });
-
-            // Build entities with safe orderIndex (auto-fill if 0 + collision)
-            var entities = new List<Lesson>();
-            var nextIdx = await _baseRepository.NextOrderIndexAsync(courseId);
-
-            foreach (var model in request.Lessons)
-            {
-                var entity = model.GetLesson(courseId);
-                if (entity.OrderIndex <= 0) entity.OrderIndex = nextIdx++;
-                else nextIdx = Math.Max(nextIdx, entity.OrderIndex + 1);
-                entities.Add(entity);
-                _baseRepository.Add(entity);
-            }
-
-            await _baseRepository.SaveChangesAsync();
-
-            // Refresh cached stats on Course
-            await _courseRepository.RefreshCourseStatsAsync(_baseRepository, _chapterRepository, courseId);
-            await _courseRepository.SaveChangesAsync();
-
-            var data = entities.Select(e => new LessonResponse(e)).ToList();
+            var data = result.Data!;
 
             return Ok(new
             {
                 success = true,
-                message = $"Created {data.Count} lesson(s) successfully." + (isNewChapter ? $" Created chapter '{chapter!.Title}'." : ""),
-                data,
-                chapterId = chapter?.Id,
-                chapterTitle = chapter?.Title ?? "Chưa phân loại"
+                message = $"Created {data.Lessons.Count} lesson(s) successfully."
+                          + (data.IsNewChapter ? $" Created chapter '{data.ChapterTitle}'." : ""),
+                data = data.Lessons,
+                chapterId = data.ChapterId,
+                chapterTitle = data.ChapterTitle ?? "Chưa phân loại"
             });
         }
 
@@ -175,37 +83,21 @@ namespace StudyCourseAPI.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> Put(long courseId, long id, [FromBody] LessonRequest model)
         {
-            var course = await _courseRepository.Query()
-                .FirstOrDefaultAsync(c => c.Id == courseId && !c.IsDeleted);
-            if (course == null) return NotFound();
+            var result = await _lessonService.UpdateAsync(courseId, id, model);
 
-            var entity = await _baseRepository.Query()
-                .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted && x.CourseId == courseId);
-            if (entity == null) return NotFound();
-
-
-            var (success, errors) = await model.ValidateLessonAsync(
-                _baseRepository, _chapterRepository, courseId, id);
-
-            if (!success)
-                return this.ValidationFailed(errors);
-
-            model.ToEntity(entity);
-            await _baseRepository.SaveChangesAsync();
-
-            await _courseRepository.RefreshCourseStatsAsync(_baseRepository, _chapterRepository, courseId);
-            await _courseRepository.SaveChangesAsync();
+            if (result.IsNotFound) return NotFound();
+            if (!result.IsSuccess) return this.ValidationFailed(result.Errors);
 
             return Ok(new
             {
                 success = true,
                 message = "Lesson updated successfully.",
-                data = new LessonResponse(entity)
+                data = result.Data
             });
         }
 
         // ─────────────────────────────────────────────────────────
-        // PUT /delete — bulk soft-delete (matches FE lessonService.deleteCourses)
+        // PUT /delete — bulk soft-delete
         // ─────────────────────────────────────────────────────────
         [Authorize(Roles = AppRoles.Admin)]
         [HttpPut("delete")]
@@ -214,19 +106,9 @@ namespace StudyCourseAPI.Controllers
             if (ids == null || ids.Count == 0)
                 return BadRequest(new { status = 400, message = "Provide at least one lesson id." });
 
-            var now = DateTime.UtcNow;
-            var affected = await _baseRepository.Query()
-                .Where(x => ids.Contains(x.Id) && !x.IsDeleted && x.CourseId == courseId)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(x => x.IsDeleted, true)
-                    .SetProperty(x => x.IsActive, false)
-                    .SetProperty(x => x.UpdatedAt, now));
+            var affected = await _lessonService.SoftDeleteAsync(courseId, ids);
 
             if (affected == 0) return NotFound();
-
-            await _courseRepository.RefreshCourseStatsAsync(_baseRepository, _chapterRepository, courseId);
-            await _courseRepository.SaveChangesAsync();
-
             return Ok(new { success = true, deleted = affected });
         }
 
@@ -237,12 +119,7 @@ namespace StudyCourseAPI.Controllers
         [HttpPut("disable")]
         public async Task<IActionResult> Disable(long courseId, [FromBody] List<long> ids)
         {
-            var now = DateTime.UtcNow;
-            var affected = await _baseRepository.Query()
-                .Where(x => ids.Contains(x.Id) && x.CourseId == courseId && !x.IsDeleted)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(x => x.IsActive, false)
-                    .SetProperty(x => x.UpdatedAt, now));
+            var affected = await _lessonService.SetActiveAsync(courseId, ids, isActive: false);
 
             return affected == 0 ? NotFound() : NoContent();
         }
@@ -254,12 +131,7 @@ namespace StudyCourseAPI.Controllers
         [HttpPut("enable")]
         public async Task<IActionResult> Enable(long courseId, [FromBody] List<long> ids)
         {
-            var now = DateTime.UtcNow;
-            var affected = await _baseRepository.Query()
-                .Where(x => ids.Contains(x.Id) && x.CourseId == courseId && !x.IsDeleted)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(x => x.IsActive, true)
-                    .SetProperty(x => x.UpdatedAt, now));
+            var affected = await _lessonService.SetActiveAsync(courseId, ids, isActive: true);
 
             return affected == 0 ? NotFound() : NoContent();
         }
@@ -272,44 +144,12 @@ namespace StudyCourseAPI.Controllers
         [HttpPut("reorder")]
         public async Task<IActionResult> Reorder(long courseId, [FromBody] List<LessonReorderItem> items)
         {
-            if (items == null || items.Count == 0)
-                return BadRequest(new { status = 400, message = "Provide at least one item." });
+            var result = await _lessonService.ReorderAsync(courseId, items);
 
-            var ids = items.Select(i => i.Id).ToList();
-            var chapterIds = items.Where(i => i.ChapterId.HasValue).Select(i => i.ChapterId!.Value).Distinct().ToList();
+            if (!result.IsSuccess)
+                return BadRequest(new { status = 400, message = result.ErrorMessage });
 
-            // Parallel validation: load lessons + valid chapter ids in one round-trip pair.
-            var lessonsTask = _baseRepository.Query()
-                .Where(l => ids.Contains(l.Id) && l.CourseId == courseId && !l.IsDeleted)
-                .ToListAsync();
-
-            var validChapterIdsTask = chapterIds.Count == 0
-                ? Task.FromResult(new List<long>())
-                : _chapterRepository.Query()
-                    .Where(c => chapterIds.Contains(c.Id) && c.CourseId == courseId && !c.IsDeleted)
-                    .Select(c => c.Id)
-                    .ToListAsync();
-
-            await Task.WhenAll(lessonsTask, validChapterIdsTask);
-            var lessons = lessonsTask.Result;
-            var validChapterIds = validChapterIdsTask.Result;
-
-            if (lessons.Count != items.Count)
-                return BadRequest(new { status = 400, message = "Some lessons do not belong to this course." });
-
-            if (chapterIds.Count > 0 && validChapterIds.Count != chapterIds.Count)
-                return BadRequest(new { status = 400, message = "Some chapters do not belong to this course." });
-
-            var byId = lessons.ToDictionary(l => l.Id);
-            foreach (var item in items)
-            {
-                if (!byId.TryGetValue(item.Id, out var lesson)) continue;
-                lesson.OrderIndex = item.OrderIndex;
-                lesson.ChapterId = item.ChapterId;
-            }
-
-            await _baseRepository.SaveChangesAsync();
-            return Ok(new { success = true, updated = lessons.Count });
+            return Ok(new { success = true, updated = result.Data });
         }
     }
 }

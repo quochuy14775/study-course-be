@@ -63,6 +63,14 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
         }
     }
 
+    /// <summary>Payload gọn cho autocomplete — chỉ đủ để render 1 dòng gợi ý.</summary>
+    public class CourseSuggestionResponse
+    {
+        public long Id { get; set; }
+        public string Title { get; set; } = null!;
+        public string? ImageUrl { get; set; }
+    }
+
     public class CourseDetailResponse : CourseResponse
     {
         public List<long> TagIds { get; set; } = new();
