@@ -25,17 +25,20 @@ public static class EmailTemplates
             footerNote: "Nếu bạn không tạo tài khoản này, hãy bỏ qua email."
         );
 
-    /// <summary>Email đặt lại mật khẩu.</summary>
-    public static string ResetPassword(string actionUrl, string? fullName = null)
+    /// <summary>Email đặt lại mật khẩu — chứa mã OTP để nhập tay, và link chỉ mang theo email (không mang OTP).</summary>
+    public static string ResetPassword(string otp, string actionUrl, string? fullName = null)
         => Layout(
-            preheader: "Yêu cầu đặt lại mật khẩu của bạn.",
+            preheader: $"Mã xác nhận đặt lại mật khẩu của bạn: {otp}",
             heading: "Đặt lại mật khẩu 🔑",
             bodyHtml: $"""
                 <p style="margin:0 0 16px;">Xin chào {Escape(fullName) ?? "bạn"},</p>
                 <p style="margin:0 0 16px;">Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn.
-                Nhấn nút bên dưới để tạo mật khẩu mới. Liên kết sẽ hết hạn sau ít phút.</p>
+                Nhập mã xác nhận bên dưới trên trang đặt lại mật khẩu. Mã có hiệu lực trong 10 phút.</p>
+                <div style="margin:0 0 16px;padding:16px;background-color:#f3f4f6;border-radius:8px;text-align:center;">
+                  <span style="font-size:32px;font-weight:700;letter-spacing:8px;color:#111827;">{Escape(otp)}</span>
+                </div>
                 """,
-            buttonText: "Đặt lại mật khẩu",
+            buttonText: "Mở trang đặt lại mật khẩu",
             buttonUrl: actionUrl,
             footerNote: "Nếu bạn không yêu cầu, hãy bỏ qua email — mật khẩu của bạn không thay đổi."
         );

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
@@ -148,22 +149,59 @@ namespace StudyCourseAPI.Services
             if (user is null || user.IsDeleted || !user.IsActive)
                 return;
 
-            var token   = await _userManager.GeneratePasswordResetTokenAsync(user);
-            var encoded = EncodeToken(token);
-            var link    = $"{_frontendUrl}/reset-password?email={Uri.EscapeDataString(user.Email!)}&token={encoded}";
+            var otp = GenerateOtp();
+            user.PasswordResetOtpHash = HashOtp(otp);
+            user.PasswordResetOtpExpiresAt = DateTime.UtcNow.AddMinutes(OtpExpiryMinutes);
+            user.PasswordResetOtpAttempts = 0;
+            await _userManager.UpdateAsync(user);
 
-            var html = EmailTemplates.ResetPassword(link, user.FullName);
-            await _emailService.SendAsync(user.Email!, "Đặt lại mật khẩu - EduHub", html);
+            // Link chỉ mang theo email để điền sẵn form — KHÔNG mang OTP (tránh lộ OTP qua log/history/referrer).
+            var link = $"{_frontendUrl}/reset-password?email={Uri.EscapeDataString(user.Email!)}";
+            var html = EmailTemplates.ResetPassword(otp, link, user.FullName);
+
+            try
+            {
+                await _emailService.SendAsync(user.Email!, "Đặt lại mật khẩu - EduHub", html);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send reset-password OTP email to {Email}", user.Email);
+            }
         }
 
         public async Task<IdentityResult> ResetPasswordAsync(ResetPasswordRequest request)
         {
-            var user = await _userManager.FindByEmailAsync(request.Email);
-            if (user is null)
-                return IdentityResult.Failed(new IdentityError { Description = "User not found" });
+            var invalidOtp = IdentityResult.Failed(new IdentityError { Description = "Invalid or expired OTP." });
 
-            var decoded = DecodeToken(request.Token);
-            return await _userManager.ResetPasswordAsync(user, decoded, request.NewPassword);
+            var user = await _userManager.FindByEmailAsync(request.Email);
+            if (user is null || user.PasswordResetOtpHash is null || user.PasswordResetOtpExpiresAt is null)
+                return invalidOtp;
+
+            if (user.PasswordResetOtpExpiresAt < DateTime.UtcNow || user.PasswordResetOtpAttempts >= OtpMaxAttempts)
+                return invalidOtp;
+
+            if (user.PasswordResetOtpHash != HashOtp(request.Otp))
+            {
+                user.PasswordResetOtpAttempts++;
+                await _userManager.UpdateAsync(user);
+                return invalidOtp;
+            }
+
+            if (await _userManager.HasPasswordAsync(user))
+            {
+                var removeResult = await _userManager.RemovePasswordAsync(user);
+                if (!removeResult.Succeeded) return removeResult;
+            }
+
+            var addResult = await _userManager.AddPasswordAsync(user, request.NewPassword);
+            if (!addResult.Succeeded) return addResult;
+
+            user.PasswordResetOtpHash = null;
+            user.PasswordResetOtpExpiresAt = null;
+            user.PasswordResetOtpAttempts = 0;
+            await _userManager.UpdateAsync(user);
+
+            return addResult;
         }
 
         // ── private ──────────────────────────────────────────────────────────
@@ -182,6 +220,15 @@ namespace StudyCourseAPI.Services
 
         private static string DecodeToken(string encoded)
             => Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(encoded));
+
+        private const int OtpExpiryMinutes = 10;
+        private const int OtpMaxAttempts = 5;
+
+        private static string GenerateOtp()
+            => RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+
+        private static string HashOtp(string otp)
+            => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(otp)));
 
         private async Task EnsureRolesExistAsync()
         {

@@ -12,6 +12,10 @@ public class ApplicationUser : IdentityUser<long>, IAuditable
     public bool IsDeleted { get; set; }
     public bool IsActive { get; set; }
 
+    public string? PasswordResetOtpHash { get; set; }
+    public DateTime? PasswordResetOtpExpiresAt { get; set; }
+    public int PasswordResetOtpAttempts { get; set; }
+
     public ICollection<UserCourse> UserCourses { get; set; } = new List<UserCourse>();
     public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
     public ICollection<UserLessonProgress> LessonProgresses { get; set; } = new List<UserLessonProgress>();
