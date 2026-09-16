@@ -19,9 +19,24 @@ public class ApplicationDbContext
         IdentityRoleClaim<long>,
         IdentityUserToken<long>>
 {
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+    private readonly IHttpContextAccessor? _httpContextAccessor;
+
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IHttpContextAccessor? httpContextAccessor = null)
         : base(options)
     {
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    /// <summary>Email của user đang gọi request (null khi chạy ngoài HTTP: migrate, seed, job).</summary>
+    private string? CurrentUserEmail
+    {
+        get
+        {
+            var user = _httpContextAccessor?.HttpContext?.User;
+            if (user?.Identity?.IsAuthenticated != true) return null;
+            var email = user.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+            return string.IsNullOrWhiteSpace(email) ? user.Identity.Name : email;
+        }
     }
 
     // ========================
@@ -291,6 +306,7 @@ public class ApplicationDbContext
             entity.Property(x => x.Name).IsRequired().HasMaxLength(128);
             entity.Property(x => x.Slug).IsRequired().HasMaxLength(64);
             entity.Property(x => x.IconUrl).HasMaxLength(500);
+            entity.Property(x => x.BrandColor).HasMaxLength(16);
             entity.Property(x => x.IsActive).HasDefaultValue(true);
 
             entity.HasIndex(x => x.Slug).IsUnique();
@@ -305,6 +321,8 @@ public class ApplicationDbContext
             entity.Property(x => x.Name).IsRequired().HasMaxLength(128);
             entity.Property(x => x.Slug).IsRequired().HasMaxLength(64);
             entity.Property(x => x.IconUrl).HasMaxLength(500);
+            entity.Property(x => x.BrandColor).HasMaxLength(16);
+            entity.Property(x => x.Category).HasMaxLength(32);
             entity.Property(x => x.IsActive).HasDefaultValue(true);
 
             entity.HasIndex(x => x.Slug).IsUnique();
@@ -743,6 +761,8 @@ public class ApplicationDbContext
     // ========================
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        var actor = CurrentUserEmail;
+
         foreach (var entry in ChangeTracker.Entries())
         {
             if (entry.Entity is IAuditable auditable)
@@ -751,6 +771,16 @@ public class ApplicationDbContext
                     auditable.CreatedAt = DateTime.UtcNow;
                 if (entry.State == EntityState.Modified)
                     auditable.UpdatedAt = DateTime.UtcNow;
+            }
+
+            // Ai tạo / sửa (Course, Article, Roadmap) — ghi email để thống kê đóng góp của từng admin.
+            // Không ghi đè nếu service đã set tay (ArticleService đang tự ghi).
+            if (entry.Entity is IUserTracking tracked && actor is not null)
+            {
+                if (entry.State == EntityState.Added && string.IsNullOrEmpty(tracked.CreatedBy))
+                    tracked.CreatedBy = actor;
+                if (entry.State == EntityState.Modified)
+                    tracked.UpdatedBy = actor;
             }
         }
 

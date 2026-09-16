@@ -25,6 +25,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 #region Dependency Injection (DI)
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache(); // PublicStatsService cache số liệu trang chủ 5 phút
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();

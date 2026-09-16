@@ -11,10 +11,27 @@ namespace StudyCourseAPI.Controllers;
 public class UserController : ControllerBase
 {
     private readonly IUserProfileService _userProfileService;
+    private readonly IUserActivityService _userActivityService;
+    private readonly IUserOverviewService _userOverviewService;
 
-    public UserController(IUserProfileService userProfileService)
+    public UserController(
+        IUserProfileService userProfileService,
+        IUserActivityService userActivityService,
+        IUserOverviewService userOverviewService)
     {
         _userProfileService = userProfileService;
+        _userActivityService = userActivityService;
+        _userOverviewService = userOverviewService;
+    }
+
+    /// <summary>Trang cá nhân: thống kê, kỹ năng, chứng chỉ, khóa đang học dở, hoạt động gần đây, thành tích.</summary>
+    [HttpGet("me/overview")]
+    public async Task<IActionResult> GetMyOverview()
+    {
+        var overview = await _userOverviewService.GetMyOverviewAsync();
+
+        if (overview is null) return Unauthorized();
+        return Ok(overview);
     }
 
     [HttpGet("me")]
@@ -24,6 +41,13 @@ public class UserController : ControllerBase
 
         if (profile is null) return Unauthorized();
         return Ok(profile);
+    }
+
+    /// <summary>Hoạt động theo ngày (contribution graph) + streak của user đang đăng nhập. days: 7–730, mặc định 365.</summary>
+    [HttpGet("me/activity")]
+    public async Task<IActionResult> GetMyActivity([FromQuery] int days = 365)
+    {
+        return Ok(await _userActivityService.GetMyActivityAsync(days));
     }
 
     [HttpPut("me")]

@@ -7,6 +7,9 @@ namespace StudyCourseAPI.DTOs.Requests.Admin
         public string? IconUrl { get; set; }
         public bool IsActive { get; set; } = true;
 
+        /// <summary>#RRGGBB — null/rỗng = để FE tự gợi ý theo slug.</summary>
+        public string? BrandColor { get; set; }
+
         /// <summary>Framework ids that this language supports.</summary>
         public List<long>? FrameworkIds { get; set; }
     }

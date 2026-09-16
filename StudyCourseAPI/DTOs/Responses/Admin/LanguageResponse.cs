@@ -8,6 +8,7 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
         public string Name { get; set; } = null!;
         public string Slug { get; set; } = null!;
         public string? IconUrl { get; set; }
+        public string? BrandColor { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
@@ -19,6 +20,7 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
             Name = language.Name;
             Slug = language.Slug;
             IconUrl = language.IconUrl;
+            BrandColor = language.BrandColor;
             IsActive = language.IsActive;
             CreatedAt = language.CreatedAt;
             UpdatedAt = language.UpdatedAt;
@@ -37,6 +39,7 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
         public string Name { get; set; } = null!;
         public string Slug { get; set; } = null!;
         public string? IconUrl { get; set; }
+        public string? BrandColor { get; set; }
 
         public LanguageSummaryResponse(Language language)
         {
@@ -44,6 +47,7 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
             Name = language.Name;
             Slug = language.Slug;
             IconUrl = language.IconUrl;
+            BrandColor = language.BrandColor;
         }
     }
 }

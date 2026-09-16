@@ -71,6 +71,8 @@ public class FrameworkService : IFrameworkService
             Name = model.Name.Trim(),
             Slug = model.Slug.Trim().ToLower(),
             IconUrl = model.IconUrl?.Trim(),
+            BrandColor = model.BrandColor.NormalizeBrandColor(),
+            Category = model.Category.NormalizeCategory(),
             IsActive = model.IsActive
         };
         _frameworkRepository.Add(entity);
@@ -99,6 +101,8 @@ public class FrameworkService : IFrameworkService
         entity.Name = model.Name.Trim();
         entity.Slug = model.Slug.Trim().ToLower();
         entity.IconUrl = model.IconUrl?.Trim();
+        entity.BrandColor = model.BrandColor.NormalizeBrandColor();
+        entity.Category = model.Category.NormalizeCategory();
         entity.IsActive = model.IsActive;
         await _frameworkRepository.SaveChangesAsync();
 

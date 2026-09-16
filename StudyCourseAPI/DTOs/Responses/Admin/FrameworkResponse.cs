@@ -8,6 +8,8 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
         public string Name { get; set; } = null!;
         public string Slug { get; set; } = null!;
         public string? IconUrl { get; set; }
+        public string? BrandColor { get; set; }
+        public string? Category { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
@@ -19,6 +21,8 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
             Name = framework.Name;
             Slug = framework.Slug;
             IconUrl = framework.IconUrl;
+            BrandColor = framework.BrandColor;
+            Category = framework.Category;
             IsActive = framework.IsActive;
             CreatedAt = framework.CreatedAt;
             UpdatedAt = framework.UpdatedAt;
@@ -37,6 +41,8 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
         public string Name { get; set; } = null!;
         public string Slug { get; set; } = null!;
         public string? IconUrl { get; set; }
+        public string? BrandColor { get; set; }
+        public string? Category { get; set; }
 
         public FrameworkSummaryResponse(Framework framework)
         {
@@ -44,6 +50,8 @@ namespace StudyCourseAPI.DTOs.Responses.Admin
             Name = framework.Name;
             Slug = framework.Slug;
             IconUrl = framework.IconUrl;
+            BrandColor = framework.BrandColor;
+            Category = framework.Category;
         }
     }
 }

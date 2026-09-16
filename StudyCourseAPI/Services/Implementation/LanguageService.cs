@@ -71,6 +71,7 @@ public class LanguageService : ILanguageService
             Name = model.Name.Trim(),
             Slug = model.Slug.Trim().ToLower(),
             IconUrl = model.IconUrl?.Trim(),
+            BrandColor = model.BrandColor.NormalizeBrandColor(),
             IsActive = model.IsActive
         };
         _languageRepository.Add(entity);
@@ -99,6 +100,7 @@ public class LanguageService : ILanguageService
         entity.Name = model.Name.Trim();
         entity.Slug = model.Slug.Trim().ToLower();
         entity.IconUrl = model.IconUrl?.Trim();
+        entity.BrandColor = model.BrandColor.NormalizeBrandColor();
         entity.IsActive = model.IsActive;
         await _languageRepository.SaveChangesAsync();
 
